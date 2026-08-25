@@ -12,3 +12,4 @@
 *.user
 *.suo
 *.cache
+Artifact/wwwroot/**

@@ -15,9 +15,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const { users, userAccessRights, roleModules } = useDatabase();
+  const { users, userAccessRights, roleModules, isInitialLoadDone } = useDatabase();
 
   useEffect(() => {
+    if (!isInitialLoadDone) return;
+
     const savedUser = localStorage.getItem('janatics_auth_user');
     if (savedUser) {
       try {
@@ -34,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     setLoading(false);
-  }, [users]);
+  }, [isInitialLoadDone, users]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     // Simple demo validation rule:

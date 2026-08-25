@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User, Role, Module, MenuItem, RoleModuleMapping, RoleMenuMapping, UserAccessRight, PortalMessage } from '../../types/domain';
+import { api } from '../../api/axiosClient';
 
 interface DatabaseContextType {
   users: User[];
@@ -12,152 +13,51 @@ interface DatabaseContextType {
   portalMessages: PortalMessage[];
   getMessage: (code: string) => string;
   updatePortalMessage: (msg: PortalMessage) => void;
+  isInitialLoadDone: boolean;
   
   // CRUD User
-  addUser: (user: Omit<User, 'id'>) => void;
-  updateUser: (user: User) => void;
-  deleteUser: (code: string) => void;
+  addUser: (user: Omit<User, 'id'>) => Promise<void>;
+  updateUser: (user: User) => Promise<void>;
+  deleteUser: (code: string) => Promise<void>;
 
   // CRUD Role
-  addRole: (role: Omit<Role, 'id'>) => void;
-  updateRole: (role: Role) => void;
-  deleteRole: (code: string) => void;
+  addRole: (role: Omit<Role, 'id'>) => Promise<void>;
+  updateRole: (role: Role) => Promise<void>;
+  deleteRole: (code: string) => Promise<void>;
 
   // CRUD Module
-  addModule: (mod: Omit<Module, 'id'>) => void;
-  updateModule: (mod: Module) => void;
-  deleteModule: (code: string) => void;
+  addModule: (mod: Omit<Module, 'id'>) => Promise<void>;
+  updateModule: (mod: Module) => Promise<void>;
+  deleteModule: (code: string) => Promise<void>;
 
   // CRUD Menu Item
-  addMenuItem: (menuItem: Omit<MenuItem, 'id'>) => void;
-  updateMenuItem: (menuItem: MenuItem) => void;
-  deleteMenuItem: (code: string) => void;
+  addMenuItem: (menuItem: Omit<MenuItem, 'id'>) => Promise<void>;
+  updateMenuItem: (menuItem: MenuItem) => Promise<void>;
+  deleteMenuItem: (code: string) => Promise<void>;
 
   // Save Mappings
-  saveRoleModules: (mappings: RoleModuleMapping[]) => void;
-  saveRoleMenus: (mappings: RoleMenuMapping[]) => void;
-  saveUserAccessRights: (rights: UserAccessRight[]) => void;
+  saveRoleModules: (mappings: RoleModuleMapping[]) => Promise<void>;
+  saveRoleMenus: (mappings: RoleMenuMapping[]) => Promise<void>;
+  saveUserAccessRights: (rights: UserAccessRight[]) => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
 
-// Initial Data Setup
-const initialUsers: User[] = [
-  { id: 1, code: 'USR001', name: 'Rajalakshmi', login: 'rajalakshmi', email: 'rajalakshmi@janatics.com', mobile: '+91 98765 00001', role: 'Super Admin', type: 'Employee', sec: 99, reportsTo: '', validFrom: '2024-01-01', validTo: '2027-12-31', status: 'Active' },
-  { id: 2, code: 'USR002', name: 'Govindaraj', login: 'govindaraj', email: 'govindaraj@janatics.com', mobile: '+91 98765 00002', role: 'Finance Admin', type: 'Employee', sec: 80, reportsTo: 'Rajalakshmi', validFrom: '2024-01-10', validTo: '2027-12-31', status: 'Active' },
-  { id: 3, code: 'USR003', name: 'CKV', login: 'ckv', email: 'ckv@janatics.com', mobile: '+91 98765 00003', role: 'HR Admin', type: 'Employee', sec: 78, reportsTo: 'Rajalakshmi', validFrom: '2024-01-10', validTo: '2027-12-31', status: 'Active' },
-  { id: 4, code: 'USR004', name: 'Raaman', login: 'raaman', email: 'raaman@janatics.com', mobile: '+91 98765 00004', role: 'Operations', type: 'Employee', sec: 72, reportsTo: 'Rajalakshmi', validFrom: '2024-02-01', validTo: '2027-12-31', status: 'Active' },
-  { id: 5, code: 'USR005', name: 'Saranya', login: 'saranya', email: 'saranya@janatics.com', mobile: '+91 98765 00005', role: 'Viewer', type: 'Employee', sec: 50, reportsTo: 'Govindaraj', validFrom: '2024-03-01', validTo: '2026-12-31', status: 'Active' },
-  { id: 6, code: 'USR006', name: 'Sindhu', login: 'sindhu', email: 'sindhu@janatics.com', mobile: '+91 98765 00006', role: 'Viewer', type: 'Employee', sec: 48, reportsTo: 'Govindaraj', validFrom: '2024-03-01', validTo: '2026-12-31', status: 'Active' },
-  { id: 7, code: 'USR007', name: 'Sangeetha', login: 'sangeetha', email: 'sangeetha@janatics.com', mobile: '+91 98765 00007', role: 'Auditor', type: 'Employee', sec: 45, reportsTo: 'CKV', validFrom: '2024-03-15', validTo: '2026-12-31', status: 'Active' },
-  { id: 8, code: 'USR008', name: 'Rahul', login: 'rahul', email: 'rahul@janatics.com', mobile: '+91 98765 00008', role: 'Viewer', type: 'Contract', sec: 10, reportsTo: 'CKV', validFrom: '2024-04-01', validTo: '2026-12-31', status: 'Inactive' },
-  { id: 9, code: 'USR009', name: 'Sathish', login: 'sathish', email: 'sathish@janatics.com', mobile: '+91 98765 00009', role: 'Operations', type: 'Employee', sec: 68, reportsTo: 'Raaman', validFrom: '2024-02-15', validTo: '2027-12-31', status: 'Active' },
-];
-
-const initialRoles: Role[] = [
-  { id: 1, code: 'ROL001', name: 'Super Admin', status: 'Active' },
-  { id: 2, code: 'ROL002', name: 'Finance Admin', status: 'Active' },
-  { id: 3, code: 'ROL003', name: 'HR Admin', status: 'Active' },
-  { id: 4, code: 'ROL004', name: 'Operations', status: 'Active' },
-  { id: 5, code: 'ROL005', name: 'Viewer', status: 'Active' },
-  { id: 6, code: 'ROL006', name: 'Auditor', status: 'Active' },
-];
-
-const initialModules: Module[] = [
-  { id: 1, code: 'MOD001', name: 'Admin', description: 'System administration & configuration', status: 'Active' },
-  { id: 2, code: 'MOD002', name: 'PES', description: 'Planning Execution System', status: 'Active' },
-  { id: 3, code: 'MOD003', name: 'PES Lite', description: 'Simplified planning execution', status: 'Active' },
-  { id: 4, code: 'MOD004', name: 'DMS', description: 'Dealer Management System', status: 'Active' },
-  { id: 5, code: 'MOD005', name: 'SCM', description: 'Supply Chain Management', status: 'Active' },
-  { id: 6, code: 'MOD006', name: 'PMS', description: 'Performance Monitoring System', status: 'Active' },
-  { id: 7, code: 'MOD007', name: 'MES', description: 'Manufacturing Execution System', status: 'Active' },
-  { id: 8, code: 'MOD008', name: 'Finance', description: 'Financial Accounting & Reporting', status: 'Active' },
-];
-
-const initialMenuItems: MenuItem[] = [
-  { id: 1, code: 'MNU001', menuName: 'Chart of Accounts', displayName: 'Chart of Accounts', module: 'Finance', parent: '—', type: 'Master', nature: 'Form', sort: 1, status: 'Active' },
-  { id: 2, code: 'MNU002', menuName: 'Journal Entry', displayName: 'Journal Entry', module: 'Finance', parent: '—', type: 'Transaction', nature: 'Form', sort: 2, status: 'Active' },
-  { id: 3, code: 'MNU003', menuName: 'Trial Balance', displayName: 'Trial Balance Report', module: 'Finance', parent: '—', type: 'Report', nature: 'Report', sort: 3, status: 'Active' },
-  { id: 4, code: 'MNU004', menuName: 'Employee Master', displayName: 'Employee Master', module: 'Human Resources', parent: '—', type: 'Master', nature: 'Form', sort: 1, status: 'Active' },
-  { id: 5, code: 'MNU005', menuName: 'Leave Application', displayName: 'Leave Application', module: 'Human Resources', parent: '—', type: 'Transaction', nature: 'Form', sort: 2, status: 'Active' },
-  { id: 6, code: 'MNU006', menuName: 'Item Master', displayName: 'Item Master', module: 'Inventory', parent: '—', type: 'Master', nature: 'Form', sort: 1, status: 'Active' },
-  { id: 7, code: 'MNU007', menuName: 'Stock Transfer', displayName: 'Stock Transfer', module: 'Inventory', parent: '—', type: 'Transaction', nature: 'Form', sort: 2, status: 'Active' },
-  { id: 8, code: 'MNU008', menuName: 'Stock Ledger', displayName: 'Stock Ledger Report', module: 'Inventory', parent: '—', type: 'Report', nature: 'Report', sort: 3, status: 'Active' },
-];
-
-// Initial Mappings
-const initialRoleModules: RoleModuleMapping[] = [
-  { roleName: 'Super Admin', moduleName: 'Admin', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'PES', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'PES Lite', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'DMS', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'SCM', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'PMS', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'MES', hasAccess: true },
-  { roleName: 'Super Admin', moduleName: 'Finance', hasAccess: true },
-  { roleName: 'Finance Admin', moduleName: 'Finance', hasAccess: true },
-  { roleName: 'Finance Admin', moduleName: 'SCM', hasAccess: true },
-];
-
-const initialRoleMenus: RoleMenuMapping[] = [
-  { roleName: 'Super Admin', menuCode: 'MNU001', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU002', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU003', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU004', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU005', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU006', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU007', hasAccess: true },
-  { roleName: 'Super Admin', menuCode: 'MNU008', hasAccess: true },
-  { roleName: 'Finance Admin', menuCode: 'MNU001', hasAccess: true },
-  { roleName: 'Finance Admin', menuCode: 'MNU002', hasAccess: true },
-  { roleName: 'Finance Admin', menuCode: 'MNU003', hasAccess: true },
-];
-
-const initialUserAccessRights: UserAccessRight[] = [
-  { username: 'rajalakshmi', moduleName: 'Admin', canView: true, canCreate: true, canEdit: true, canDelete: true },
-  { username: 'rajalakshmi', moduleName: 'PES', canView: true, canCreate: true, canEdit: true, canDelete: true },
-  { username: 'rajalakshmi', moduleName: 'Finance', canView: true, canCreate: true, canEdit: true, canDelete: true },
-  { username: 'govindaraj', moduleName: 'Finance', canView: true, canCreate: true, canEdit: true, canDelete: false },
-  { username: 'govindaraj', moduleName: 'SCM', canView: true, canCreate: false, canEdit: false, canDelete: false },
-];
-
-const initialPortalMessages: PortalMessage[] = [
-  { id: 1, portalCode: 'User Master', portalText: 'User Master' },
-  { id: 2, portalCode: 'Role Master', portalText: 'Role Master' },
-  { id: 3, portalCode: 'Module Master', portalText: 'Module Master' },
-  { id: 4, portalCode: 'Menu Master', portalText: 'Menu Master' },
-  { id: 5, portalCode: 'Role-Module Mapping', portalText: 'Role-Module Mapping' },
-  { id: 6, portalCode: 'Role-Menu Mapping', portalText: 'Role-Menu Mapping' },
-  { id: 7, portalCode: 'User Access Overrides', portalText: 'User Access Overrides' },
-  { id: 8, portalCode: 'User Hierarchy', portalText: 'User Hierarchy' },
-  { id: 9, portalCode: 'Finance', portalText: 'Finance' },
-  { id: 10, portalCode: 'SCM', portalText: 'SCM' },
-  { id: 11, portalCode: 'MES', portalText: 'MES' },
-  { id: 12, portalCode: 'PMS', portalText: 'PMS' },
-  { id: 13, portalCode: 'DMS', portalText: 'DMS' },
-  { id: 14, portalCode: 'PES', portalText: 'PES' },
-  { id: 15, portalCode: 'PES Lite', portalText: 'PES Lite' },
-];
+// Initial Data Setup (Fallbacks in case server APIs are empty or offline)
 
 export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>(() => {
-    const local = localStorage.getItem('janatics_db_users');
-    return local ? JSON.parse(local) : initialUsers;
-  });
-
-  const [roles, setRoles] = useState<Role[]>(() => {
-    const local = localStorage.getItem('janatics_db_roles');
-    return local ? JSON.parse(local) : initialRoles;
-  });
-
-  const [modules, setModules] = useState<Module[]>(() => {
-    const local = localStorage.getItem('janatics_db_modules');
-    return local ? JSON.parse(local) : initialModules;
-  });
+  const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [modules, setModules] = useState<Module[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [roleModules, setRoleModules] = useState<RoleModuleMapping[]>([]);
+  const [roleMenus, setRoleMenus] = useState<RoleMenuMapping[]>([]);
+  const [userAccessRights, setUserAccessRights] = useState<UserAccessRight[]>([]);
+  const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
   const [portalMessages, setPortalMessages] = useState<PortalMessage[]>(() => {
     const local = localStorage.getItem('janatics_portal_messages');
-    return local ? JSON.parse(local) : initialPortalMessages;
+    return local ? JSON.parse(local) : [];
   });
 
   useEffect(() => {
@@ -173,109 +73,491 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setPortalMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
   };
 
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
-    const local = localStorage.getItem('janatics_db_menu_items');
-    return local ? JSON.parse(local) : initialMenuItems;
-  });
+  // Load state from backend APIs on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [usersRes, rolesRes, modulesRes, menusRes, roleMenusRes, uarRes] = await Promise.all([
+          api.users.getAll().catch(e => { console.error("Error fetching users:", e); return { data: [] }; }),
+          api.roles.getAll().catch(e => { console.error("Error fetching roles:", e); return { data: [] }; }),
+          api.modules.getAll().catch(e => { console.error("Error fetching modules:", e); return { data: [] }; }),
+          api.menus.getAll().catch(e => { console.error("Error fetching menus:", e); return { data: [] }; }),
+          api.roleMenu.getAll().catch(e => { console.error("Error fetching role-menus:", e); return { data: [] }; }),
+          api.userAccessRights.getAll().catch(e => { console.error("Error fetching user access rights:", e); return { data: [] }; })
+        ]);
 
-  const [roleModules, setRoleModules] = useState<RoleModuleMapping[]>(() => {
-    const local = localStorage.getItem('janatics_db_role_modules');
-    return local ? JSON.parse(local) : initialRoleModules;
-  });
+        // Map Modules
+        let mappedModules: Module[] = [];
+        if (modulesRes.data && modulesRes.data.length > 0) {
+          mappedModules = modulesRes.data.map((m: any) => ({
+            id: m.moduleId || 0,
+            code: m.moduleCode || '',
+            name: m.moduleName || '',
+            description: m.remarks || '',
+            status: m.status === 'Inactive' ? 'Inactive' : 'Active'
+          }));
+        } else {
+          mappedModules = [];
+        }
 
-  const [roleMenus, setRoleMenus] = useState<RoleMenuMapping[]>(() => {
-    const local = localStorage.getItem('janatics_db_role_menus');
-    return local ? JSON.parse(local) : initialRoleMenus;
-  });
+        // Map Roles
+        let mappedRoles: Role[] = [];
+        if (rolesRes.data && rolesRes.data.length > 0) {
+          mappedRoles = rolesRes.data.map((r: any) => ({
+            id: r.roleId || 0,
+            code: r.roleCode || '',
+            name: r.roleName || '',
+            status: r.status === 'Inactive' ? 'Inactive' : 'Active'
+          }));
+        } else {
+          mappedRoles = [];
+        }
 
-  const [userAccessRights, setUserAccessRights] = useState<UserAccessRight[]>(() => {
-    const local = localStorage.getItem('janatics_db_user_access_rights');
-    return local ? JSON.parse(local) : initialUserAccessRights;
-  });
+        // Map Users
+        let mappedUsers: User[] = [];
+        if (usersRes.data && usersRes.data.length > 0) {
+          mappedUsers = usersRes.data.map((u: any) => ({
+            id: u.userId || 0,
+            code: u.userCode || '',
+            name: u.fullName || '',
+            login: u.userName || '',
+            email: u.primaryEmail || '',
+            mobile: u.primaryMobile || '',
+            role: u.roleName || '',
+            type: u.userType || 'Employee',
+            sec: u.securityLevel || 50,
+            reportsTo: u.reportsToName || '',
+            validFrom: u.validFrom ? u.validFrom.split('T')[0] : '',
+            validTo: u.validTo ? u.validTo.split('T')[0] : '',
+            status: u.status === 'Inactive' ? 'Inactive' : 'Active'
+          }));
+        } else {
+          mappedUsers = [];
+        }
 
-  // Sync state to local storage
-  useEffect(() => { localStorage.setItem('janatics_db_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem('janatics_db_roles', JSON.stringify(roles)); }, [roles]);
-  useEffect(() => { localStorage.setItem('janatics_db_modules', JSON.stringify(modules)); }, [modules]);
-  useEffect(() => { localStorage.setItem('janatics_db_menu_items', JSON.stringify(menuItems)); }, [menuItems]);
-  useEffect(() => { localStorage.setItem('janatics_db_role_modules', JSON.stringify(roleModules)); }, [roleModules]);
-  useEffect(() => { localStorage.setItem('janatics_db_role_menus', JSON.stringify(roleMenus)); }, [roleMenus]);
-  useEffect(() => { localStorage.setItem('janatics_db_user_access_rights', JSON.stringify(userAccessRights)); }, [userAccessRights]);
+        // Map Menus
+        let mappedMenuItems: MenuItem[] = [];
+        if (menusRes.data && menusRes.data.length > 0) {
+          mappedMenuItems = menusRes.data.map((m: any) => {
+            const parentMenu = menusRes.data.find((pm: any) => pm.menuId === m.parentMenuId);
+            const parentName = parentMenu ? (parentMenu.menuName || '—') : '—';
+            return {
+              id: m.menuId || 0,
+              code: m.menuCode || '',
+              menuName: m.menuName || '',
+              displayName: m.displayName || '',
+              module: m.moduleName || '',
+              parent: parentName,
+              type: m.menuType || 'Master',
+              nature: m.nature || 'Form',
+              sort: m.sortOrder || 1,
+              status: m.status === 'Inactive' ? 'Inactive' : 'Active'
+            };
+          });
+        } else {
+          mappedMenuItems = [];
+        }
+
+        // Map Role Menus
+        let mappedRoleMenus: RoleMenuMapping[] = [];
+        if (roleMenusRes.data && roleMenusRes.data.length > 0) {
+          mappedRoleMenus = roleMenusRes.data.map((rm: any) => {
+            const menu = mappedMenuItems.find(m => m.id === rm.menuId);
+            return {
+              roleName: rm.roleName || '',
+              menuCode: menu ? menu.code : '',
+              hasAccess: true
+            };
+          }).filter(rm => rm.menuCode !== '');
+        } else {
+          mappedRoleMenus = [];
+        }
+
+        // Map Role Modules
+        const derivedRoleModules: RoleModuleMapping[] = [];
+        mappedRoles.forEach(r => {
+          mappedModules.forEach(m => {
+            const hasMenuAccess = roleMenusRes.data?.some((rm: any) => 
+              rm.roleName?.toLowerCase() === r.name.toLowerCase() &&
+              rm.moduleName?.toLowerCase() === m.name.toLowerCase()
+            );
+            derivedRoleModules.push({
+              roleName: r.name,
+              moduleName: m.name,
+              hasAccess: r.name === 'Super Admin' || !!hasMenuAccess
+            });
+          });
+        });
+
+        // Map User Access Rights (overrides)
+        let mappedUserAccessRights: UserAccessRight[] = [];
+        if (uarRes.data && uarRes.data.length > 0) {
+          uarRes.data.forEach((uar: any) => {
+            if (uar.remarks) {
+              try {
+                const parsed = JSON.parse(uar.remarks);
+                if (Array.isArray(parsed)) {
+                  mappedUserAccessRights.push(...parsed);
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+          });
+        }
+
+
+        setModules(mappedModules);
+        setRoles(mappedRoles);
+        setUsers(mappedUsers);
+        setMenuItems(mappedMenuItems);
+        setRoleMenus(mappedRoleMenus);
+        setRoleModules(derivedRoleModules);
+        setUserAccessRights(mappedUserAccessRights);
+      } catch (err) {
+        console.error("Error loading initial data from API:", err);
+      } finally {
+        setIsInitialLoadDone(true);
+      }
+    };
+
+    loadData();
+  }, []);
 
   // CRUD - Users
-  const addUser = (newUser: Omit<User, 'id'>) => {
-    setUsers(prev => {
-      const nextId = prev.length > 0 ? Math.max(...prev.map(u => u.id)) + 1 : 1;
-      return [...prev, { ...newUser, id: nextId }];
-    });
+  const addUser = async (newUser: Omit<User, 'id'>) => {
+    try {
+      const roleId = roles.find(r => r.name.toLowerCase() === newUser.role.toLowerCase())?.id;
+      const reportingToUser = users.find(u => u.name.toLowerCase() === newUser.reportsTo.toLowerCase());
+      const payload = {
+        userCode: newUser.code,
+        fullName: newUser.name,
+        userName: newUser.login,
+        primaryEmail: newUser.email,
+        primaryMobile: newUser.mobile,
+        roleId: roleId || undefined,
+        roleName: newUser.role,
+        userType: newUser.type,
+        securityLevel: newUser.sec,
+        reportingTo: reportingToUser?.id || undefined,
+        reportsToName: newUser.reportsTo || undefined,
+        validFrom: newUser.validFrom,
+        validTo: newUser.validTo || undefined,
+        status: newUser.status,
+        password: "Password123!"
+      };
+      const res = await api.users.create(payload);
+      const createdId = res.data?.userId || (users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1);
+      setUsers(prev => [...prev, { ...newUser, id: createdId }]);
+    } catch (err) {
+      console.error("Failed to add user:", err);
+    }
   };
 
-  const updateUser = (updatedUser: User) => {
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+  const updateUser = async (updatedUser: User) => {
+    try {
+      const roleId = roles.find(r => r.name.toLowerCase() === updatedUser.role.toLowerCase())?.id;
+      const reportingToUser = users.find(u => u.name.toLowerCase() === updatedUser.reportsTo.toLowerCase());
+      const payload = {
+        userId: updatedUser.id,
+        userCode: updatedUser.code,
+        fullName: updatedUser.name,
+        userName: updatedUser.login,
+        primaryEmail: updatedUser.email,
+        primaryMobile: updatedUser.mobile,
+        roleId: roleId || undefined,
+        roleName: updatedUser.role,
+        userType: updatedUser.type,
+        securityLevel: updatedUser.sec,
+        reportingTo: reportingToUser?.id || undefined,
+        reportsToName: updatedUser.reportsTo || undefined,
+        validFrom: updatedUser.validFrom,
+        validTo: updatedUser.validTo || undefined,
+        status: updatedUser.status
+      };
+      await api.users.update(updatedUser.id, payload);
+      setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    } catch (err) {
+      console.error("Failed to update user:", err);
+    }
   };
 
-  const deleteUser = (code: string) => {
-    setUsers(prev => prev.filter(u => u.code !== code));
+  const deleteUser = async (code: string) => {
+    try {
+      const targetUser = users.find(u => u.code.toLowerCase() === code.toLowerCase());
+      if (targetUser) {
+        await api.users.remove(targetUser.id);
+        setUsers(prev => prev.filter(u => u.code !== code));
+      }
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+    }
   };
 
   // CRUD - Roles
-  const addRole = (newRole: Omit<Role, 'id'>) => {
-    setRoles(prev => {
-      const nextId = prev.length > 0 ? Math.max(...prev.map(r => r.id)) + 1 : 1;
-      return [...prev, { ...newRole, id: nextId }];
-    });
+  const addRole = async (newRole: Omit<Role, 'id'>) => {
+    try {
+      const payload = {
+        roleCode: newRole.code,
+        roleName: newRole.name,
+        status: newRole.status
+      };
+      const res = await api.roles.create(payload);
+      const createdId = res.data?.roleId || (roles.length > 0 ? Math.max(...roles.map(r => r.id)) + 1 : 1);
+      setRoles(prev => [...prev, { ...newRole, id: createdId }]);
+    } catch (err) {
+      console.error("Failed to add role:", err);
+    }
   };
 
-  const updateRole = (updatedRole: Role) => {
-    setRoles(prev => prev.map(r => r.id === updatedRole.id ? updatedRole : r));
+  const updateRole = async (updatedRole: Role) => {
+    try {
+      const payload = {
+        roleId: updatedRole.id,
+        roleCode: updatedRole.code,
+        roleName: updatedRole.name,
+        status: updatedRole.status
+      };
+      await api.roles.update(updatedRole.id, payload);
+      setRoles(prev => prev.map(r => r.id === updatedRole.id ? updatedRole : r));
+    } catch (err) {
+      console.error("Failed to update role:", err);
+    }
   };
 
-  const deleteRole = (code: string) => {
-    setRoles(prev => prev.filter(r => r.code !== code));
+  const deleteRole = async (code: string) => {
+    try {
+      const targetRole = roles.find(r => r.code.toLowerCase() === code.toLowerCase());
+      if (targetRole) {
+        await api.roles.remove(targetRole.id);
+        setRoles(prev => prev.filter(r => r.code !== code));
+      }
+    } catch (err) {
+      console.error("Failed to delete role:", err);
+    }
   };
 
   // CRUD - Modules
-  const addModule = (newMod: Omit<Module, 'id'>) => {
-    setModules(prev => {
-      const nextId = prev.length > 0 ? Math.max(...prev.map(m => m.id)) + 1 : 1;
-      return [...prev, { ...newMod, id: nextId }];
-    });
+  const addModule = async (newMod: Omit<Module, 'id'>) => {
+    try {
+      const payload = {
+        moduleCode: newMod.code,
+        moduleName: newMod.name,
+        remarks: newMod.description,
+        status: newMod.status
+      };
+      const res = await api.modules.create(payload);
+      const createdId = res.data?.moduleId || (modules.length > 0 ? Math.max(...modules.map(m => m.id)) + 1 : 1);
+      setModules(prev => [...prev, { ...newMod, id: createdId }]);
+    } catch (err) {
+      console.error("Failed to add module:", err);
+    }
   };
 
-  const updateModule = (updatedMod: Module) => {
-    setModules(prev => prev.map(m => m.id === updatedMod.id ? updatedMod : m));
+  const updateModule = async (updatedMod: Module) => {
+    try {
+      const payload = {
+        moduleId: updatedMod.id,
+        moduleCode: updatedMod.code,
+        moduleName: updatedMod.name,
+        remarks: updatedMod.description,
+        status: updatedMod.status
+      };
+      await api.modules.update(updatedMod.id, payload);
+      setModules(prev => prev.map(m => m.id === updatedMod.id ? updatedMod : m));
+    } catch (err) {
+      console.error("Failed to update module:", err);
+    }
   };
 
-  const deleteModule = (code: string) => {
-    setModules(prev => prev.filter(m => m.code !== code));
+  const deleteModule = async (code: string) => {
+    try {
+      const targetMod = modules.find(m => m.code.toLowerCase() === code.toLowerCase());
+      if (targetMod) {
+        await api.modules.remove(targetMod.id);
+        setModules(prev => prev.filter(m => m.code !== code));
+      }
+    } catch (err) {
+      console.error("Failed to delete module:", err);
+    }
   };
 
   // CRUD - Menu Items
-  const addMenuItem = (newMenuItem: Omit<MenuItem, 'id'>) => {
-    setMenuItems(prev => {
-      const nextId = prev.length > 0 ? Math.max(...prev.map(m => m.id)) + 1 : 1;
-      return [...prev, { ...newMenuItem, id: nextId }];
-    });
+  const addMenuItem = async (newMenuItem: Omit<MenuItem, 'id'>) => {
+    try {
+      const moduleId = modules.find(m => m.name.toLowerCase() === newMenuItem.module.toLowerCase())?.id;
+      const parentMenu = menuItems.find(mi => mi.menuName.toLowerCase() === newMenuItem.parent.toLowerCase());
+      const payload = {
+        menuCode: newMenuItem.code,
+        menuName: newMenuItem.menuName,
+        displayName: newMenuItem.displayName,
+        moduleId: moduleId || undefined,
+        moduleName: newMenuItem.module,
+        parentMenuId: parentMenu?.id || undefined,
+        menuType: newMenuItem.type,
+        nature: newMenuItem.nature,
+        sortOrder: newMenuItem.sort,
+        status: newMenuItem.status
+      };
+      const res = await api.menus.create(payload);
+      const createdId = res.data?.menuId || (menuItems.length > 0 ? Math.max(...menuItems.map(m => m.id)) + 1 : 1);
+      setMenuItems(prev => [...prev, { ...newMenuItem, id: createdId }]);
+    } catch (err) {
+      console.error("Failed to add menu item:", err);
+    }
   };
 
-  const updateMenuItem = (updatedMenuItem: MenuItem) => {
-    setMenuItems(prev => prev.map(m => m.id === updatedMenuItem.id ? updatedMenuItem : m));
+  const updateMenuItem = async (updatedMenuItem: MenuItem) => {
+    try {
+      const moduleId = modules.find(m => m.name.toLowerCase() === updatedMenuItem.module.toLowerCase())?.id;
+      const parentMenu = menuItems.find(mi => mi.menuName.toLowerCase() === updatedMenuItem.parent.toLowerCase());
+      const payload = {
+        menuId: updatedMenuItem.id,
+        menuCode: updatedMenuItem.code,
+        menuName: updatedMenuItem.menuName,
+        displayName: updatedMenuItem.displayName,
+        moduleId: moduleId || undefined,
+        moduleName: updatedMenuItem.module,
+        parentMenuId: parentMenu?.id || undefined,
+        menuType: updatedMenuItem.type,
+        nature: updatedMenuItem.nature,
+        sortOrder: updatedMenuItem.sort,
+        status: updatedMenuItem.status
+      };
+      await api.menus.update(updatedMenuItem.id, payload);
+      setMenuItems(prev => prev.map(m => m.id === updatedMenuItem.id ? updatedMenuItem : m));
+    } catch (err) {
+      console.error("Failed to update menu item:", err);
+    }
   };
 
-  const deleteMenuItem = (code: string) => {
-    setMenuItems(prev => prev.filter(m => m.code !== code));
+  const deleteMenuItem = async (code: string) => {
+    try {
+      const targetMenu = menuItems.find(m => m.code.toLowerCase() === code.toLowerCase());
+      if (targetMenu) {
+        await api.menus.remove(targetMenu.id);
+        setMenuItems(prev => prev.filter(m => m.code !== code));
+      }
+    } catch (err) {
+      console.error("Failed to delete menu item:", err);
+    }
   };
 
   // Save Mappings
-  const saveRoleModules = (mappings: RoleModuleMapping[]) => {
+  const saveRoleModules = async (mappings: RoleModuleMapping[]) => {
+    for (const mapping of mappings) {
+      const oldMapping = roleModules.find(
+        rm => rm.roleName.toLowerCase() === mapping.roleName.toLowerCase() &&
+              rm.moduleName.toLowerCase() === mapping.moduleName.toLowerCase()
+      );
+      if (oldMapping && oldMapping.hasAccess !== mapping.hasAccess) {
+        if (!mapping.hasAccess) {
+          const roleId = roles.find(r => r.name.toLowerCase() === mapping.roleName.toLowerCase())?.id;
+          if (roleId) {
+            try {
+              const currentMappingsRes = await api.roleMenu.getByRole(roleId);
+              const toDelete = currentMappingsRes.data.filter(
+                rm => rm.moduleName?.toLowerCase() === mapping.moduleName.toLowerCase()
+              );
+              for (const item of toDelete) {
+                if (item.roleMenuId) {
+                  await api.roleMenu.remove(item.roleMenuId);
+                }
+              }
+            } catch (err) {
+              console.error("Failed to delete role-module mappings:", err);
+            }
+          }
+        } else {
+          const roleId = roles.find(r => r.name.toLowerCase() === mapping.roleName.toLowerCase())?.id;
+          const moduleId = modules.find(m => m.name.toLowerCase() === mapping.moduleName.toLowerCase())?.id;
+          const firstMenu = menuItems.find(mi => mi.module.toLowerCase() === mapping.moduleName.toLowerCase());
+          if (roleId && moduleId && firstMenu) {
+            try {
+              await api.roleMenu.create({
+                roleId,
+                moduleId,
+                menuId: firstMenu.id,
+                permView: 'Y',
+                permAdd: 'Y',
+                permEdit: 'Y',
+                permDelete: 'Y'
+              });
+            } catch (err) {
+              console.error("Failed to create default role-module mapping:", err);
+            }
+          }
+        }
+      }
+    }
     setRoleModules(mappings);
   };
 
-  const saveRoleMenus = (mappings: RoleMenuMapping[]) => {
+  const saveRoleMenus = async (mappings: RoleMenuMapping[]) => {
+    for (const mapping of mappings) {
+      const oldMapping = roleMenus.find(
+        rm => rm.roleName.toLowerCase() === mapping.roleName.toLowerCase() &&
+              rm.menuCode.toLowerCase() === mapping.menuCode.toLowerCase()
+      );
+      const wasAccess = oldMapping ? oldMapping.hasAccess : false;
+      if (wasAccess !== mapping.hasAccess) {
+        const role = roles.find(r => r.name.toLowerCase() === mapping.roleName.toLowerCase());
+        const menu = menuItems.find(m => m.code.toLowerCase() === mapping.menuCode.toLowerCase());
+        const moduleItem = menu ? modules.find(mod => mod.name.toLowerCase() === menu.module.toLowerCase()) : null;
+
+        if (role && menu && moduleItem) {
+          if (mapping.hasAccess) {
+            try {
+              await api.roleMenu.create({
+                roleId: role.id,
+                moduleId: moduleItem.id,
+                menuId: menu.id,
+                permView: 'Y',
+                permAdd: 'Y',
+                permEdit: 'Y',
+                permDelete: 'Y'
+              });
+            } catch (err) {
+              console.error("Failed to create role-menu mapping:", err);
+            }
+          } else {
+            try {
+              const currentMappingsRes = await api.roleMenu.getByRole(role.id);
+              const targetRecord = currentMappingsRes.data.find(
+                rm => rm.menuId === menu.id
+              );
+              if (targetRecord && targetRecord.roleMenuId) {
+                await api.roleMenu.remove(targetRecord.roleMenuId);
+              }
+            } catch (err) {
+              console.error("Failed to delete role-menu mapping:", err);
+            }
+          }
+        }
+      }
+    }
     setRoleMenus(mappings);
   };
 
-  const saveUserAccessRights = (rights: UserAccessRight[]) => {
+  const saveUserAccessRights = async (rights: UserAccessRight[]) => {
+    const usernames = Array.from(new Set(rights.map(r => r.username.toLowerCase())));
+    for (const username of usernames) {
+      const user = users.find(u => u.login.toLowerCase() === username);
+      if (user) {
+        const userRights = rights.filter(r => r.username.toLowerCase() === username);
+        try {
+          await api.userAccessRights.removeByUser(user.id);
+          await api.userAccessRights.create({
+            userId: user.id,
+            userName: user.login,
+            remarks: JSON.stringify(userRights),
+            status: 'Active'
+          });
+        } catch (err) {
+          console.error(`Failed to save access rights for user ${username}:`, err);
+        }
+      }
+    }
     setUserAccessRights(rights);
   };
 
@@ -305,7 +587,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       saveUserAccessRights,
       portalMessages,
       getMessage,
-      updatePortalMessage
+      updatePortalMessage,
+      isInitialLoadDone
     }}>
       {children}
     </DatabaseContext.Provider>
