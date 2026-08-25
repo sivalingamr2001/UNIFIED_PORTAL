@@ -1,0 +1,2 @@
+2026-08-20 10:04:17.381 +05:30 [WRN] The WebRootPath was not found: D:\POC\UNIFIED_PORTAL\Backend\PES_LITE.WEB\wwwroot. Static files may be unavailable.
+2026-08-20 10:04:17.749 +05:30 [WRN] The WebRootPath was not found: D:\POC\UNIFIED_PORTAL\Backend\PES_LITE.WEB\wwwroot. Static files may be unavailable.

@@ -1,0 +1,2 @@
+2026-08-19 12:13:34.133 +05:30 [WRN] The WebRootPath was not found: D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\PES_LITE.WEB\wwwroot. Static files may be unavailable.
+2026-08-19 12:13:34.429 +05:30 [WRN] The WebRootPath was not found: D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\PES_LITE.WEB\wwwroot. Static files may be unavailable.
