@@ -41,14 +41,37 @@ interface DatabaseContextType {
   saveUserAccessRights: (rights: UserAccessRight[]) => Promise<void>;
 }
 
+const initialUsers: User[] = [
+  { id: 1, code: 'USR001', name: 'Rajalakshmi', login: 'rajalakshmi', email: 'rajalakshmi@janatics.com', mobile: '+91 98765 00001', role: 'Super Admin', type: 'Employee', sec: 99, reportsTo: '', validFrom: '2024-01-01', validTo: '2027-12-31', status: 'Active' },
+  { id: 2, code: 'USR002', name: 'Govindaraj', login: 'govindaraj', email: 'govindaraj@janatics.com', mobile: '+91 98765 00002', role: 'Finance Admin', type: 'Employee', sec: 80, reportsTo: 'Rajalakshmi', validFrom: '2024-01-10', validTo: '2027-12-31', status: 'Active' },
+  { id: 3, code: 'USR003', name: 'CKV', login: 'ckv', email: 'ckv@janatics.com', mobile: '+91 98765 00003', role: 'HR Admin', type: 'Employee', sec: 78, reportsTo: 'Rajalakshmi', validFrom: '2024-01-10', validTo: '2027-12-31', status: 'Active' },
+  { id: 4, code: 'USR004', name: 'Raaman', login: 'raaman', email: 'raaman@janatics.com', mobile: '+91 98765 00004', role: 'Operations', type: 'Employee', sec: 72, reportsTo: 'Rajalakshmi', validFrom: '2024-02-01', validTo: '2027-12-31', status: 'Active' },
+  { id: 5, code: 'USR005', name: 'Saranya', login: 'saranya', email: 'saranya@janatics.com', mobile: '+91 98765 00005', role: 'Viewer', type: 'Employee', sec: 50, reportsTo: 'Govindaraj', validFrom: '2024-03-01', validTo: '2026-12-31', status: 'Active' },
+  { id: 6, code: 'USR006', name: 'Sindhu', login: 'sindhu', email: 'sindhu@janatics.com', mobile: '+91 98765 00006', role: 'Viewer', type: 'Employee', sec: 48, reportsTo: 'Govindaraj', validFrom: '2024-03-01', validTo: '2026-12-31', status: 'Active' },
+  { id: 7, code: 'USR007', name: 'Sangeetha', login: 'sangeetha', email: 'sangeetha@janatics.com', mobile: '+91 98765 00007', role: 'Auditor', type: 'Employee', sec: 45, reportsTo: 'CKV', validFrom: '2024-03-15', validTo: '2026-12-31', status: 'Active' },
+  { id: 8, code: 'USR008', name: 'Rahul', login: 'rahul', email: 'rahul@janatics.com', mobile: '+91 98765 00008', role: 'Viewer', type: 'Contract', sec: 10, reportsTo: 'CKV', validFrom: '2024-04-01', validTo: '2026-12-31', status: 'Inactive' },
+  { id: 9, code: 'USR009', name: 'Sathish', login: 'sathish', email: 'sathish@janatics.com', mobile: '+91 98765 00009', role: 'Operations', type: 'Employee', sec: 68, reportsTo: 'Raaman', validFrom: '2024-02-15', validTo: '2027-12-31', status: 'Active' },
+];
+
+const initialModules: Module[] = [
+  { id: 1, code: 'ADMIN', name: 'Admin', description: 'System administration', status: 'Active' },
+  { id: 2, code: 'FINANCE', name: 'Finance', description: 'Finance operations', status: 'Active' },
+  { id: 3, code: 'SCM', name: 'SCM', description: 'Supply chain management', status: 'Active' },
+  { id: 4, code: 'MES', name: 'MES', description: 'Manufacturing execution', status: 'Active' },
+  { id: 5, code: 'PMS', name: 'PMS', description: 'Performance management', status: 'Active' },
+  { id: 6, code: 'DMS', name: 'DMS', description: 'Document management', status: 'Active' },
+  { id: 7, code: 'PES', name: 'PES', description: 'Planning and execution', status: 'Active' },
+  { id: 8, code: 'PES-LITE', name: 'PES Lite', description: 'Lightweight planning and execution', status: 'Active' },
+];
+
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
 
 // Initial Data Setup (Fallbacks in case server APIs are empty or offline)
 
 export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(initialUsers);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [modules, setModules] = useState<Module[]>([]);
+  const [modules, setModules] = useState<Module[]>(initialModules);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [roleModules, setRoleModules] = useState<RoleModuleMapping[]>([]);
   const [roleMenus, setRoleMenus] = useState<RoleMenuMapping[]>([]);
@@ -97,7 +120,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             status: m.status === 'Inactive' ? 'Inactive' : 'Active'
           }));
         } else {
-          mappedModules = [];
+          mappedModules = initialModules;
         }
 
         // Map Roles

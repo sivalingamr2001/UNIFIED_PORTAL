@@ -38,7 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   }, [isInitialLoadDone, users]);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+const login = async (username: string, password: string): Promise<boolean> => {
     // Simple demo validation rule:
     // admin / admin -> Administrator (Super Admin)
     // skyfast / skyfast -> Govindaraj (Finance Admin, USR002)
@@ -47,7 +47,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let matchedUser: User | undefined;
     
     if (username.toLowerCase() === 'admin' && password === 'admin') {
-      matchedUser = users.find(u => u.login === 'rajalakshmi' && u.status === 'Active');
+      // Hardcoded 'admin' user data as requested
+      matchedUser = { 
+        id: 1, 
+        code: 'USR001', 
+        name: 'Rajalakshmi', 
+        login: 'rajalakshmi', 
+        email: 'rajalakshmi@janatics.com', 
+        mobile: '+91 98765 00001', 
+        role: 'Super Admin', 
+        type: 'Employee', 
+        sec: 99, 
+        reportsTo: '', 
+        validFrom: '2024-01-01', 
+        validTo: '2027-12-31', 
+        status: 'Active' 
+      };
     } else if (username.toLowerCase() === 'skyfast' && password === 'skyfast') {
       matchedUser = users.find(u => u.login === 'govindaraj' && u.status === 'Active');
     } else if (password === username) {
@@ -63,6 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     throw new Error('Invalid username or password');
   };
+
 
   const logout = () => {
     setUser(null);
