@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { ChevronRight, Home } from 'lucide-react';
-import { useDatabase } from '../shared/hooks/useDatabase';
+import { usePortalMessages } from '../shared/hooks/usePortalMessages';
 
 const pathMap: Record<string, string> = {
   'admin': 'Admin',
@@ -87,7 +87,7 @@ const pathMap: Record<string, string> = {
 };
 
 export const Breadcrumbs: React.FC = () => {
-  const { getMessage } = useDatabase();
+  const { getMessage } = usePortalMessages();
   const location = useLocation();
   const pathnames = location.pathname.split('/').filter(x => x);
 

@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
-import { useDatabase } from '../../../shared/hooks/useDatabase';
+import React, { useState, useEffect } from 'react';
+import { menusApi, modulesApi } from '../../../api/endpoints';
+import type { ModuleModel } from '../../../types/models';
 import type { MenuItem } from '../../../types/domain';
+import { usePortalMessages } from '../../../shared/hooks/usePortalMessages';
 import { Search, Plus, Download, Pen, Trash2, Copy, X, AlertTriangle } from 'lucide-react';
 
 export const MenuMasterPage: React.FC = () => {
-  const { menuItems, modules, addMenuItem, updateMenuItem, deleteMenuItem, getMessage } = useDatabase();
+  const { getMessage } = usePortalMessages();
+  
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [modules, setModules] = useState<ModuleModel[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal State
@@ -21,6 +27,42 @@ export const MenuMasterPage: React.FC = () => {
   const [sort, setSort] = useState(1);
   const [status, setStatus] = useState<'Active' | 'Inactive'>('Active');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const fetchMenusAndModules = async () => {
+    try {
+      const [menusList, modulesList] = await Promise.all([
+        menusApi.list(),
+        modulesApi.list()
+      ]);
+      
+      const mapped = menusList.map((m) => {
+        const parentMenu = menusList.find(pm => pm.id === m.parentMenuId);
+        return {
+          id: m.id,
+          code: m.code || '',
+          menuName: m.name,
+          displayName: m.displayName || '',
+          module: m.moduleName || '',
+          parent: parentMenu ? parentMenu.name : '—',
+          type: m.menuType || 'Master',
+          nature: m.nature || 'Form',
+          sort: m.sortOrder || 1,
+          status: m.status === 'Inactive' ? 'Inactive' : 'Active' as 'Active' | 'Inactive'
+        };
+      });
+      
+      setMenuItems(mapped);
+      setModules(modulesList);
+    } catch (err) {
+      console.error("Failed to load menus and modules:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMenusAndModules();
+  }, []);
 
   const handleOpenAdd = () => {
     setEditingMenuItem(null);
@@ -50,7 +92,7 @@ export const MenuMasterPage: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -59,54 +101,57 @@ export const MenuMasterPage: React.FC = () => {
       return;
     }
 
-    if (editingMenuItem) {
-      updateMenuItem({
-        ...editingMenuItem,
-        menuName: menuName.trim(),
-        displayName: displayName.trim(),
-        module,
-        parent,
-        type,
-        nature,
-        sort,
-        status,
-      });
-    } else {
-      const exists = menuItems.some(m => m.menuName.toLowerCase() === menuName.trim().toLowerCase() && m.module === module);
-      if (exists) {
-        setFormError('Menu name already exists in this module.');
-        return;
+    const matchedModule = modules.find(m => m.name.toLowerCase() === module.toLowerCase());
+    const matchedParent = menuItems.find(mi => mi.menuName.toLowerCase() === parent.toLowerCase());
+
+    const payload = {
+      menuId: editingMenuItem ? editingMenuItem.id : undefined,
+      menuCode: editingMenuItem ? editingMenuItem.code : `MNU00${menuItems.length + 1}`,
+      menuName: menuName.trim(),
+      displayName: displayName.trim(),
+      moduleId: matchedModule?.id || undefined,
+      moduleName: module,
+      parentMenuId: matchedParent?.id || undefined,
+      menuType: type,
+      nature: nature,
+      sortOrder: sort,
+      status: status
+    };
+
+    try {
+      if (editingMenuItem) {
+        await menusApi.update(editingMenuItem.id, payload);
+      } else {
+        await menusApi.create(payload);
       }
-      
-      const newCode = `MNU00${menuItems.length + 1}`;
-      addMenuItem({
-        code: newCode,
-        menuName: menuName.trim(),
-        displayName: displayName.trim(),
-        module,
-        parent,
-        type,
-        nature,
-        sort,
-        status,
-      });
+      setModalOpen(false);
+      setLoading(true);
+      await fetchMenusAndModules();
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to save menu item.');
     }
-    setModalOpen(false);
   };
 
-  const handleDelete = (code: string) => {
-    if (window.confirm(`Are you sure you want to delete menu item ${code}?`)) {
-      deleteMenuItem(code);
+  const handleDelete = async (code: string) => {
+    const targetMenu = menuItems.find(m => m.code.toLowerCase() === code.toLowerCase());
+    if (targetMenu && window.confirm(`Are you sure you want to delete menu item: ${code}?`)) {
+      try {
+        await menusApi.remove(targetMenu.id);
+        setLoading(true);
+        await fetchMenusAndModules();
+      } catch (err: any) {
+        alert(err.message || 'Failed to delete menu item.');
+      }
     }
   };
 
   const handleCopy = (m: MenuItem) => {
     navigator.clipboard.writeText(JSON.stringify(m, null, 2));
-    alert(`Menu item details for ${m.menuName} copied!`);
+    alert(`Menu item copy done for ${m.menuName}!`);
   };
 
   const handleExportCSV = () => {
-    const headers = ['#', 'Code', 'Menu Name', 'Display Name', 'Module', 'Parent', 'Type', 'Nature', 'Sort Order', 'Status'];
+    const headers = ['#', 'Code', 'Menu Name', 'Display Name', 'Module', 'Parent Menu', 'Type', 'Nature', 'Sort Order', 'Status'];
     const rows = filteredMenuItems.map((m, index) => [
       index + 1,
       m.code,
@@ -135,12 +180,24 @@ export const MenuMasterPage: React.FC = () => {
   const filteredMenuItems = menuItems.filter(m => 
     m.menuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.module.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
+          <p className="text-xs font-medium text-slate-400">Loading menu master records...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-      {/* Title & Search bar */}
+      {/* Title & Actions Row */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-bold text-slate-900 tracking-tight">{getMessage('Menu Master')}</h2>
@@ -150,13 +207,14 @@ export const MenuMasterPage: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Search bar */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input 
               placeholder="Search menus..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-white border border-slate-300 rounded pl-7 pr-3 py-1.5 text-[11px] text-slate-800 placeholder:text-slate-400 font-medium w-48 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-all"
+              className="bg-white border border-slate-300 rounded pl-7 pr-3 py-1.5 text-[11px] text-slate-800 placeholder:text-slate-400 font-medium w-48 focus:outline-none focus:border-blue-500"
             />
           </div>
 
@@ -170,14 +228,14 @@ export const MenuMasterPage: React.FC = () => {
           <button 
             onClick={handleExportCSV}
             title="Export CSV"
-            className="p-1.5 rounded border border-slate-300 text-slate-600 hover:text-slate-800 bg-white hover:border-slate-400 transition-colors"
+            className="p-1.5 rounded border border-slate-300 text-slate-600 hover:text-slate-800 hover:border-slate-400 bg-white transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Grid of Menus table */}
+      {/* Grid Table */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
         <div className="overflow-auto max-h-[500px]">
           <table className="w-full text-xs border-collapse">
@@ -188,7 +246,7 @@ export const MenuMasterPage: React.FC = () => {
                 <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Menu Name</th>
                 <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Display Name</th>
                 <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Module</th>
-                <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Parent</th>
+                <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Parent Menu</th>
                 <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Type</th>
                 <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Nature</th>
                 <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">Sort Order</th>
@@ -289,7 +347,7 @@ export const MenuMasterPage: React.FC = () => {
 
             <form onSubmit={handleSave} className="p-5 space-y-4">
               {formError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs font-semibold text-red-800 flex items-center gap-1.5">
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs font-semibold text-red-800 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
                   {formError}
                 </div>
@@ -304,25 +362,25 @@ export const MenuMasterPage: React.FC = () => {
                     value={menuName}
                     onChange={(e) => setMenuName(e.target.value)}
                     className="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
-                    placeholder="Chart of Accounts"
+                    placeholder="e.g. general-ledger"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Display Name *</label>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Display Label *</label>
                   <input 
                     type="text" 
                     required
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     className="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
-                    placeholder="Accounts Ledger"
+                    placeholder="e.g. General Ledger"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Module *</label>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Target Module *</label>
                   <select 
                     value={module}
                     onChange={(e) => setModule(e.target.value)}
@@ -334,24 +392,29 @@ export const MenuMasterPage: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Parent Item</label>
-                  <input 
-                    type="text" 
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Parent Section</label>
+                  <select 
                     value={parent}
                     onChange={(e) => setParent(e.target.value)}
-                    className="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
-                    placeholder="—"
-                  />
+                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-500"
+                  >
+                    <option value="—">None (Root Directory)</option>
+                    {menuItems
+                      .filter(m => m.code !== editingMenuItem?.code)
+                      .map(m => (
+                        <option key={m.id} value={m.menuName}>{m.menuName}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Type</label>
                   <select 
                     value={type}
                     onChange={(e) => setType(e.target.value)}
-                    className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 outline-none bg-white focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-500"
                   >
                     <option value="Master">Master</option>
                     <option value="Transaction">Transaction</option>
@@ -363,29 +426,27 @@ export const MenuMasterPage: React.FC = () => {
                   <select 
                     value={nature}
                     onChange={(e) => setNature(e.target.value)}
-                    className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 outline-none bg-white focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-500"
                   >
                     <option value="Form">Form</option>
-                    <option value="Report">Report</option>
-                    <option value="Dashboard">Dashboard</option>
-                    <option value="Inquiry">Inquiry</option>
+                    <option value="Grid">Grid</option>
+                    <option value="Chart">Chart</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Sort Index</label>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Sort Order</label>
                   <input 
                     type="number" 
                     value={sort}
                     onChange={(e) => setSort(parseInt(e.target.value) || 1)}
-                    min={1}
                     className="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">status</label>
-                <div className="flex gap-4 mt-1">
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Menu status</label>
+                <div className="flex gap-4">
                   <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
                     <input 
                       type="radio" 
@@ -421,7 +482,7 @@ export const MenuMasterPage: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg transition-colors text-xs font-semibold shadow-sm"
                 >
-                  Save Item
+                  Save Record
                 </button>
               </div>
             </form>

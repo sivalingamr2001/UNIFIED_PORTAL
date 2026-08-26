@@ -1,22 +1,27 @@
-import React, { useState } from 'react';
-import { useDatabase } from '../../../shared/hooks/useDatabase';
-import type { User } from '../../../types/domain';
+import React, { useState, useEffect } from 'react';
+import { usersApi, rolesApi } from '../../../api/endpoints';
+import type { UserModel, RoleModel } from '../../../types/models';
+import { usePortalMessages } from '../../../shared/hooks/usePortalMessages';
 import { Search, Plus, Download, Pen, Trash2, Copy, X, CircleAlert } from 'lucide-react';
 
 export const UserMasterPage: React.FC = () => {
-  const { users, roles, addUser, updateUser, deleteUser, getMessage } = useDatabase();
+  const { getMessage } = usePortalMessages();
+  
+  const [users, setUsers] = useState<UserModel[]>([]);
+  const [roles, setRoles] = useState<RoleModel[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<UserModel | null>(null);
   
   // Form Fields State
   const [name, setName] = useState('');
   const [login, setLogin] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
-  const [role, setRole] = useState('');
+  const [roleName, setRoleName] = useState('');
   const [type, setType] = useState('Employee');
   const [sec, setSec] = useState(50);
   const [reportsTo, setReportsTo] = useState('');
@@ -25,6 +30,25 @@ export const UserMasterPage: React.FC = () => {
   const [status, setStatus] = useState<'Active' | 'Inactive'>('Active');
   const [formError, setFormError] = useState<string | null>(null);
 
+  const fetchUsersAndRoles = async () => {
+    try {
+      const [usersList, rolesList] = await Promise.all([
+        usersApi.list(),
+        rolesApi.list()
+      ]);
+      setUsers(usersList);
+      setRoles(rolesList);
+    } catch (err) {
+      console.error("Failed to fetch users and roles:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsersAndRoles();
+  }, []);
+
   // Open modal for Adding
   const handleOpenAdd = () => {
     setEditingUser(null);
@@ -32,7 +56,7 @@ export const UserMasterPage: React.FC = () => {
     setLogin('');
     setEmail('');
     setMobile('');
-    setRole(roles[0]?.name || '');
+    setRoleName(roles[0]?.roleName || '');
     setType('Employee');
     setSec(50);
     setReportsTo('');
@@ -44,84 +68,87 @@ export const UserMasterPage: React.FC = () => {
   };
 
   // Open modal for Editing
-  const handleOpenEdit = (u: User) => {
+  const handleOpenEdit = (u: UserModel) => {
     setEditingUser(u);
-    setName(u.name);
-    setLogin(u.login);
-    setEmail(u.email);
-    setMobile(u.mobile);
-    setRole(u.role);
-    setType(u.type);
-    setSec(u.sec);
-    setReportsTo(u.reportsTo);
-    setValidFrom(u.validFrom);
-    setValidTo(u.validTo);
-    setStatus(u.status);
+    setName(u.fullName);
+    setLogin(u.userName);
+    setEmail(u.primaryEmail);
+    setMobile(u.primaryMobile);
+    setRoleName(u.roleName || '');
+    setType(u.userType || 'Employee');
+    setSec(u.securityLevel || 50);
+    setReportsTo(u.reportsToName || '');
+    setValidFrom(u.validFrom ? u.validFrom.split('T')[0] : '');
+    setValidTo(u.validTo ? u.validTo.split('T')[0] : '');
+    setStatus(u.status === 'Inactive' ? 'Inactive' : 'Active');
     setFormError(null);
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
-    if (!name || !login || !email || !role) {
+    if (!name || !login || !email || !roleName) {
       setFormError('Please fill out all required fields.');
       return;
     }
 
-    if (editingUser) {
-      updateUser({
-        ...editingUser,
-        name,
-        login,
-        email,
-        mobile,
-        role,
-        type,
-        sec,
-        reportsTo,
-        validFrom,
-        validTo,
-        status,
-      });
-    } else {
-      // Check username uniqueness
-      const usernameExists = users.some(u => u.login.toLowerCase() === login.toLowerCase());
-      if (usernameExists) {
-        setFormError('Username login code already exists.');
-        return;
+    const matchedRoleId = roles.find(r => r.roleName.toLowerCase() === roleName.toLowerCase())?.roleId;
+    const matchedReportsToUser = users.find(u => u.fullName.toLowerCase() === reportsTo.toLowerCase());
+
+    const payload: Partial<UserModel> = {
+      userCode: editingUser ? editingUser.userCode : `USR00${users.length + 1}`,
+      fullName: name,
+      userName: login,
+      primaryEmail: email,
+      primaryMobile: mobile,
+      roleId: matchedRoleId || undefined,
+      roleName: roleName,
+      userType: type,
+      securityLevel: sec,
+      reportingTo: matchedReportsToUser?.userId || undefined,
+      reportsToName: reportsTo || undefined,
+      validFrom: validFrom,
+      validTo: validTo || undefined,
+      status: status,
+      password: "Password123!"
+    };
+
+    try {
+      if (editingUser) {
+        await usersApi.update(editingUser.userId, payload);
+      } else {
+        const usernameExists = users.some(u => u.userName.toLowerCase() === login.toLowerCase());
+        if (usernameExists) {
+          setFormError('Username login code already exists.');
+          return;
+        }
+        await usersApi.create(payload);
       }
-      
-      const newCode = `USR00${users.length + 1}`;
-      addUser({
-        code: newCode,
-        name,
-        login,
-        email,
-        mobile,
-        role,
-        type,
-        sec,
-        reportsTo,
-        validFrom,
-        validTo,
-        status,
-      });
-    }
-
-    setModalOpen(false);
-  };
-
-  const handleDelete = (code: string) => {
-    if (window.confirm(`Are you sure you want to delete user ${code}?`)) {
-      deleteUser(code);
+      setModalOpen(false);
+      setLoading(true);
+      await fetchUsersAndRoles();
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to save user record.');
     }
   };
 
-  const handleCopy = (u: User) => {
+  const handleDelete = async (userId: number, fullName: string) => {
+    if (window.confirm(`Are you sure you want to delete user ${fullName}?`)) {
+      try {
+        await usersApi.remove(userId);
+        setLoading(true);
+        await fetchUsersAndRoles();
+      } catch (err: any) {
+        alert(err.message || 'Failed to delete user.');
+      }
+    }
+  };
+
+  const handleCopy = (u: UserModel) => {
     navigator.clipboard.writeText(JSON.stringify(u, null, 2));
-    alert(`User details for ${u.name} copied to clipboard!`);
+    alert(`User details for ${u.fullName} copied to clipboard!`);
   };
 
   // Export CSV
@@ -129,18 +156,18 @@ export const UserMasterPage: React.FC = () => {
     const headers = ['#', 'Code', 'Name', 'Login', 'Email', 'Mobile', 'Role', 'Type', 'Security Level', 'Reports To', 'Valid From', 'Valid To', 'Status'];
     const rows = filteredUsers.map((u, index) => [
       index + 1,
-      u.code,
-      u.name,
-      u.login,
-      u.email,
-      u.mobile,
-      u.role,
-      u.type,
-      u.sec,
-      u.reportsTo || 'None',
-      u.validFrom,
-      u.validTo,
-      u.status,
+      u.userCode,
+      u.fullName,
+      u.userName,
+      u.primaryEmail,
+      u.primaryMobile,
+      u.roleName || '',
+      u.userType || 'Employee',
+      u.securityLevel || 50,
+      u.reportsToName || 'None',
+      u.validFrom || '',
+      u.validTo || '',
+      u.status || 'Active',
     ]);
 
     const csvContent = "data:text/csv;charset=utf-8," 
@@ -157,11 +184,22 @@ export const UserMasterPage: React.FC = () => {
 
   // Filtered Users
   const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.role.toLowerCase().includes(searchTerm.toLowerCase())
+    u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.userCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.primaryEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.roleName && u.roleName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
+          <p className="text-xs font-medium text-slate-400">Loading user master records...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -233,37 +271,37 @@ export const UserMasterPage: React.FC = () => {
               ) : (
                 filteredUsers.map((u, index) => (
                   <tr 
-                    key={u.id} 
+                    key={u.userId} 
                     className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors group"
                   >
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[11px]">{index + 1}</td>
-                    <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[11px] font-bold text-blue-700">{u.code}</td>
+                    <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[11px] font-bold text-blue-700">{u.userCode}</td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-semibold">
                       <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 bg-blue-600">
-                          {u.name.charAt(0).toUpperCase()}
+                          {u.fullName.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-slate-900">{u.name}</span>
+                        <span className="text-slate-900">{u.fullName}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[11px]">{u.login}</td>
-                    <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">{u.email}</td>
+                    <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[11px]">{u.userName}</td>
+                    <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">{u.primaryEmail}</td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">
-                      <span className="text-purple-800 font-semibold">{u.role}</span>
+                      <span className="text-purple-800 font-semibold">{u.roleName}</span>
                     </td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">
                       <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded font-medium">
-                        {u.type}
+                        {u.userType}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[11px] text-center">
-                      <span className="font-bold text-amber-700">{u.sec}</span>
+                      <span className="font-bold text-amber-700">{u.securityLevel}</span>
                     </td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap text-slate-600 font-medium">
-                      {u.reportsTo || '—'}
+                      {u.reportsToName || '—'}
                     </td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap font-mono text-[10px] text-slate-500">
-                      {u.validFrom} to {u.validTo}
+                      {u.validFrom ? u.validFrom.split('T')[0] : ''} to {u.validTo ? u.validTo.split('T')[0] : ''}
                     </td>
                     <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${
@@ -283,7 +321,7 @@ export const UserMasterPage: React.FC = () => {
                           <Pen className="w-3.5 h-3.5" />
                         </button>
                         <button 
-                          onClick={() => handleDelete(u.code)}
+                          onClick={() => handleDelete(u.userId, u.fullName)}
                           className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -311,7 +349,7 @@ export const UserMasterPage: React.FC = () => {
             {/* Modal Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
               <h3 className="font-bold text-slate-800 text-sm">
-                {editingUser ? `Edit User: ${editingUser.code}` : 'Create New User Record'}
+                {editingUser ? `Edit User: ${editingUser.userCode}` : 'Create New User Record'}
               </h3>
               <button 
                 onClick={() => setModalOpen(false)}
@@ -384,12 +422,12 @@ export const UserMasterPage: React.FC = () => {
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Role Type *</label>
                   <select 
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
+                    value={roleName}
+                    onChange={(e) => setRoleName(e.target.value)}
                     className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-500"
                   >
                     {roles.map(r => (
-                      <option key={r.id} value={r.name}>{r.name}</option>
+                      <option key={r.roleId} value={r.roleName}>{r.roleName}</option>
                     ))}
                   </select>
                 </div>
@@ -428,9 +466,9 @@ export const UserMasterPage: React.FC = () => {
                   >
                     <option value="">None (Top Level Root)</option>
                     {users
-                      .filter(u => u.code !== editingUser?.code) // Prevent self-reporting
+                      .filter(u => u.userCode !== editingUser?.userCode) // Prevent self-reporting
                       .map(u => (
-                        <option key={u.id} value={u.name}>{u.name} ({u.role})</option>
+                        <option key={u.userId} value={u.fullName}>{u.fullName} ({u.roleName})</option>
                     ))}
                   </select>
                 </div>

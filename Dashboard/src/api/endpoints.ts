@@ -40,9 +40,15 @@ function normalizeMenus(value: unknown): MenuModel[] {
   return asRecords(value).map((record) => ({
     id: numberValue(record, "id", "Id", "menuId", "MenuId", "menu_id"),
     name: textValue(record, "name", "Name", "menuName", "MenuName", "menu_name") ?? "",
+    code: textValue(record, "code", "Code", "menuCode", "MenuCode", "menu_code"),
     displayName: textValue(record, "displayName", "DisplayName", "display_name"),
     path: textValue(record, "path", "Path", "route", "Route"),
     moduleId: numberValue(record, "moduleId", "ModuleId", "module_id") || undefined,
+    moduleName: textValue(record, "moduleName", "ModuleName", "module_name"),
+    parentMenuId: numberValue(record, "parentMenuId", "ParentMenuId", "parent_menu_id") || undefined,
+    menuType: textValue(record, "menuType", "MenuType", "menu_type"),
+    nature: textValue(record, "nature", "Nature"),
+    sortOrder: numberValue(record, "sortOrder", "SortOrder", "sort_order"),
     status: textValue(record, "status", "Status"),
   })).filter((menu) => menu.id > 0 && menu.name);
 }

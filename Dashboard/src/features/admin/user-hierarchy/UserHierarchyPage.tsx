@@ -1,31 +1,48 @@
-import React from 'react';
-import { useDatabase } from '../../../shared/hooks/useDatabase';
-import type { User } from '../../../types/domain';
+import React, { useState, useEffect } from 'react';
+import { usersApi } from '../../../api/endpoints';
+import type { UserModel } from '../../../types/models';
+import { usePortalMessages } from '../../../shared/hooks/usePortalMessages';
 import { Network } from 'lucide-react';
 
 interface TreeNode {
-  user: User;
+  user: UserModel;
   children: TreeNode[];
 }
 
 export const UserHierarchyPage: React.FC = () => {
-  const { users, getMessage } = useDatabase();
+  const { getMessage } = usePortalMessages();
+  const [users, setUsers] = useState<UserModel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const list = await usersApi.list();
+        setUsers(list);
+      } catch (err) {
+        console.error("Failed to load users list for hierarchy:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   // Helper to build hierarchy tree from user list dynamically
-  const buildTree = (userList: User[]): TreeNode[] => {
+  const buildTree = (userList: UserModel[]): TreeNode[] => {
     const nodeMap = new Map<string, TreeNode>();
     
     // Create node wrappers
     userList.forEach(u => {
-      nodeMap.set(u.name.toLowerCase().trim(), { user: u, children: [] });
+      nodeMap.set(u.fullName.toLowerCase().trim(), { user: u, children: [] });
     });
     
     const roots: TreeNode[] = [];
     
     userList.forEach(u => {
-      const node = nodeMap.get(u.name.toLowerCase().trim())!;
-      if (u.reportsTo) {
-        const parentNode = nodeMap.get(u.reportsTo.toLowerCase().trim());
+      const node = nodeMap.get(u.fullName.toLowerCase().trim())!;
+      if (u.reportsToName) {
+        const parentNode = nodeMap.get(u.reportsToName.toLowerCase().trim());
         if (parentNode) {
           parentNode.children.push(node);
         } else {
@@ -46,7 +63,7 @@ export const UserHierarchyPage: React.FC = () => {
   // Recursive Node renderer
   const OrgNode: React.FC<{ node: TreeNode }> = ({ node }) => {
     const hasChildren = node.children.length > 0;
-    const initial = node.user.name.charAt(0).toUpperCase();
+    const initial = node.user.fullName.charAt(0).toUpperCase();
 
     const getAvatarBg = (char: string) => {
       switch (char) {
@@ -59,91 +76,98 @@ export const UserHierarchyPage: React.FC = () => {
     };
 
     return (
-      <div className="flex flex-col items-center shrink-0">
+      <div className="flex flex-col items-center relative">
         {/* User Node Card */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm w-44 flex flex-col items-center gap-1.5 border-t-4 border-t-blue-500 hover:shadow-md transition-shadow relative">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-inner ${getAvatarBg(initial)}`}>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex items-center gap-3 w-56 relative z-10 hover:border-blue-500 hover:shadow-md transition-all">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${getAvatarBg(initial)}`}>
             {initial}
           </div>
-          <div className="text-[12px] text-slate-800 font-bold leading-tight text-center truncate w-full">
-            {node.user.name}
+          <div className="overflow-hidden text-left">
+            <h4 className="text-xs font-bold text-slate-800 truncate leading-tight">{node.user.fullName}</h4>
+            <p className="text-[10px] text-purple-800 font-bold leading-normal truncate">{node.user.roleName || 'Viewer'}</p>
+            <p className="text-[9px] text-slate-400 font-mono mt-0.5">{node.user.userCode}</p>
           </div>
-          <div className="text-[9px] font-mono text-slate-400 leading-none truncate w-full text-center">
-            {node.user.role}
-          </div>
-          <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold ${
-            node.user.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
-          }`}>
-            {node.user.status}
-          </span>
         </div>
 
-        {/* Tree Connectors & Children rendering */}
+        {/* Children Render */}
         {hasChildren && (
-          <>
-            {/* Top link line */}
-            <div className="w-0.5 h-6 bg-blue-300"></div>
-
-            {/* Children container */}
-            <div className="relative flex align-top gap-8">
+          <div className="flex flex-col items-center mt-6 relative w-full">
+            {/* Top connecting vertical line */}
+            <div className="absolute top-[-24px] w-px h-6 bg-slate-300" />
+            
+            {/* Horizontal line wrapper */}
+            <div className="flex gap-8 relative pt-2">
+              {/* Connecting horizontal border */}
               {node.children.length > 1 && (
-                /* Sibling connector bridge */
-                <div 
-                  className="absolute top-0 h-0.5 bg-blue-300"
-                  style={{
-                    left: '88px', // offset halfway across first child card
-                    right: '88px', // offset halfway across last child card
-                  }}
-                />
+                <div className="absolute top-0 left-[112px] right-[112px] h-px bg-slate-300" />
               )}
 
-              {node.children.map((child) => (
-                <div key={child.user.id} className="relative flex flex-col items-center">
-                  {/* Top tick line under sibling bridge */}
-                  {node.children.length > 1 && (
-                    <div className="w-0.5 h-3 bg-blue-300"></div>
-                  )}
-                  <OrgNode node={child} />
-                </div>
-              ))}
+              {node.children.map((child, idx) => {
+                const isFirst = idx === 0;
+                const isLast = idx === node.children.length - 1;
+                
+                return (
+                  <div key={child.user.userId} className="relative flex flex-col items-center">
+                    {/* Corner connecting vertical lines for multiple children */}
+                    {node.children.length > 1 && (
+                      <div className={`absolute top-[-8px] w-px h-2 bg-slate-300 ${
+                        isFirst ? 'left-1/2' : isLast ? 'right-1/2' : ''
+                      }`} />
+                    )}
+                    
+                    <OrgNode node={child} />
+                  </div>
+                );
+              })}
             </div>
-          </>
+          </div>
         )}
       </div>
     );
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
+          <p className="text-xs font-medium text-slate-400">Loading user hierarchy...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
       {/* Title */}
-      <div>
-        <h2 className="text-sm font-bold text-slate-900 mb-0.5">{getMessage('User Hierarchy')}</h2>
-        <p className="text-[11px] text-slate-600 font-medium font-mono">
-          Visual representation of report paths
-        </p>
-      </div>
-
-      {/* Hierarchy Viewport Wrapper */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 shadow-inner overflow-auto min-h-[500px] flex justify-center">
-        <div className="flex gap-16 justify-center items-start min-w-max">
-          {roots.length === 0 ? (
-            <div className="text-center text-slate-400 font-medium py-16">
-              No hierarchy records found. Set users reporting paths in User Master.
-            </div>
-          ) : (
-            roots.map(rootNode => (
-              <OrgNode key={rootNode.user.id} node={rootNode} />
-            ))
-          )}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 mb-0.5">{getMessage('User Hierarchy')}</h2>
+          <p className="text-[11px] text-slate-600 font-medium font-mono">
+            Interactive organization tree based on reporting configuration
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 bg-slate-50 px-2.5 py-1 border rounded-lg">
+          <Network className="w-3.5 h-3.5 text-blue-500" />
+          <span>Auto-generated Hierarchy</span>
         </div>
       </div>
 
-      {/* Footer Info bar */}
-      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex gap-2">
-        <Network className="w-4 h-4 text-blue-500 shrink-0" />
-        <p className="font-semibold leading-relaxed">
-          Dynamic calculations construct this tree in real time. Adjust reportsTo fields inside User Master to modify tree nodes dynamically.
-        </p>
+      {/* Tree Wrapper Panel */}
+      <div 
+        className="bg-white border border-slate-200 rounded-xl p-8 overflow-auto flex justify-center min-h-[500px]"
+        style={{ scrollbarWidth: 'thin' }}
+      >
+        <div className="flex gap-12 items-start py-4">
+          {roots.length === 0 ? (
+            <p className="text-slate-400 font-medium text-xs">No active users mapped in org structure.</p>
+          ) : (
+            roots.map(root => (
+              <OrgNode key={root.user.userId} node={root} />
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

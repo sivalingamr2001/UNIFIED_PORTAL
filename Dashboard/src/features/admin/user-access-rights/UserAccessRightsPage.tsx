@@ -1,13 +1,58 @@
-import React, { useState } from 'react';
-import { useDatabase } from '../../../shared/hooks/useDatabase';
+import React, { useState, useEffect } from 'react';
+import { usersApi, modulesApi, userAccessRightsApi } from '../../../api/endpoints';
+import type { UserModel, ModuleModel } from '../../../types/models';
 import type { UserAccessRight } from '../../../types/domain';
+import { usePortalMessages } from '../../../shared/hooks/usePortalMessages';
 import { ShieldCheck } from 'lucide-react';
 
 export const UserAccessRightsPage: React.FC = () => {
-  const { users, modules, userAccessRights, saveUserAccessRights, getMessage } = useDatabase();
-  const [selectedUsername, setSelectedUsername] = useState<string>(() => {
-    return users[0]?.login || '';
-  });
+  const { getMessage } = usePortalMessages();
+  
+  const [users, setUsers] = useState<UserModel[]>([]);
+  const [modules, setModules] = useState<ModuleModel[]>([]);
+  const [userAccessRights, setUserAccessRights] = useState<UserAccessRight[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedUsername, setSelectedUsername] = useState<string>('');
+
+  const fetchAllData = async () => {
+    try {
+      const [usersList, modulesList, rightsList] = await Promise.all([
+        usersApi.list(),
+        modulesApi.list(),
+        userAccessRightsApi.list()
+      ]);
+      
+      let mappedUserAccessRights: UserAccessRight[] = [];
+      rightsList.forEach((uar) => {
+        if (uar.remarks) {
+          try {
+            const parsed = JSON.parse(uar.remarks);
+            if (Array.isArray(parsed)) {
+              mappedUserAccessRights.push(...parsed);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      });
+      
+      setUsers(usersList);
+      setModules(modulesList);
+      setUserAccessRights(mappedUserAccessRights);
+      
+      if (usersList.length > 0 && !selectedUsername) {
+        setSelectedUsername(usersList[0].userName);
+      }
+    } catch (err) {
+      console.error("Failed to load user access rights:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllData();
+  }, []);
 
   const getRightsForModule = (username: string, moduleName: string): UserAccessRight => {
     const existing = userAccessRights.find(
@@ -17,7 +62,6 @@ export const UserAccessRightsPage: React.FC = () => {
 
     if (existing) return existing;
 
-    // Return default empty right
     return {
       username,
       moduleName,
@@ -28,10 +72,28 @@ export const UserAccessRightsPage: React.FC = () => {
     };
   };
 
+  const saveUserAccessRights = async (rights: UserAccessRight[]) => {
+    setUserAccessRights(rights);
+    const user = users.find(u => u.userName.toLowerCase() === selectedUsername.toLowerCase());
+    if (user) {
+      const userRights = rights.filter(r => r.username.toLowerCase() === selectedUsername.toLowerCase());
+      try {
+        await userAccessRightsApi.removeAllForUser(user.userId);
+        await userAccessRightsApi.save({
+          id: 0,
+          userId: user.userId,
+          roleId: 0,
+          remarks: JSON.stringify(userRights)
+        });
+      } catch (err) {
+        console.error(`Failed to save access rights:`, err);
+      }
+    }
+  };
+
   const handleToggleRight = (moduleName: string, field: 'canView' | 'canCreate' | 'canEdit' | 'canDelete') => {
-    // If Super Admin user, prevent toggling (they have full rights)
-    const matchedUser = users.find(u => u.login === selectedUsername);
-    if (matchedUser?.role === 'Super Admin') {
+    const matchedUser = users.find(u => u.userName === selectedUsername);
+    if (matchedUser?.roleName === 'Super Admin') {
       alert('Super Admin permissions cannot be restricted.');
       return;
     }
@@ -42,14 +104,12 @@ export const UserAccessRightsPage: React.FC = () => {
       [field]: !currentRight[field]
     };
 
-    // If canView is disabled, turn off create/edit/delete as well
     if (field === 'canView' && !updatedRight.canView) {
       updatedRight.canCreate = false;
       updatedRight.canEdit = false;
       updatedRight.canDelete = false;
     }
 
-    // If any edit/create/delete is enabled, ensure canView is enabled
     if (field !== 'canView' && updatedRight[field]) {
       updatedRight.canView = true;
     }
@@ -75,7 +135,18 @@ export const UserAccessRightsPage: React.FC = () => {
     saveUserAccessRights(updatedRights);
   };
 
-  const selectedUser = users.find(u => u.login === selectedUsername);
+  const selectedUser = users.find(u => u.userName === selectedUsername);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
+          <p className="text-xs font-medium text-slate-400">Loading access rights...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -97,8 +168,8 @@ export const UserAccessRightsPage: React.FC = () => {
             className="bg-white border border-slate-300 rounded px-3 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500 font-semibold"
           >
             {users.map(u => (
-              <option key={u.id} value={u.login}>
-                {u.name} ({u.role})
+              <option key={u.userId} value={u.userName}>
+                {u.fullName} ({u.roleName})
               </option>
             ))}
           </select>
@@ -110,87 +181,81 @@ export const UserAccessRightsPage: React.FC = () => {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
             <span className="text-xs text-slate-500 font-medium">
-              Editing permissions for: <strong className="text-slate-800">{selectedUser.name}</strong>
+              Editing permissions for: <strong className="text-slate-800">{selectedUser.fullName}</strong>
             </span>
             <span className="text-[10px] font-mono bg-purple-100 text-purple-800 border border-purple-200 px-2 py-0.5 rounded font-bold">
-              {selectedUser.role}
+              {selectedUser.roleName || 'Viewer'}
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-100/50">
-                  <th className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
-                    Module Name
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
+                    Module / Feature Area
                   </th>
-                  <th className="px-3 py-2.5 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
-                    Can View (Read)
+                  <th className="px-4 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
+                    View Access
                   </th>
-                  <th className="px-3 py-2.5 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
-                    Can Create (Write)
+                  <th className="px-4 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
+                    Create Access
                   </th>
-                  <th className="px-3 py-2.5 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
-                    Can Edit (Update)
+                  <th className="px-4 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
+                    Edit Access
                   </th>
-                  <th className="px-3 py-2.5 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
-                    Can Delete (Delete)
+                  <th className="px-4 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-slate-600 font-bold whitespace-nowrap">
+                    Delete Access
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {modules.map(m => {
-                  const rights = getRightsForModule(selectedUsername, m.name);
-                  const isSuper = selectedUser.role === 'Super Admin';
-                  
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {modules.map(mod => {
+                  const rights = getRightsForModule(selectedUsername, mod.name);
+                  const isSuperAdmin = selectedUser.roleName === 'Super Admin';
                   return (
-                    <tr key={m.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
-                        {m.name}
+                    <tr key={mod.id} className="hover:bg-slate-50/50">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-800">{getMessage(mod.name)}</div>
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          {mod.code} &bull; {mod.description || 'Enterprise module'}
+                        </div>
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        <label className="inline-flex items-center justify-center p-1 rounded hover:bg-slate-100 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={isSuper || rights.canView}
-                            disabled={isSuper}
-                            onChange={() => handleToggleRight(m.name, 'canView')}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
-                          />
-                        </label>
+                      <td className="px-4 py-3 text-center">
+                        <input 
+                          type="checkbox"
+                          disabled={isSuperAdmin}
+                          checked={isSuperAdmin || rights.canView}
+                          onChange={() => handleToggleRight(mod.name, 'canView')}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
+                        />
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        <label className="inline-flex items-center justify-center p-1 rounded hover:bg-slate-100 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={isSuper || rights.canCreate}
-                            disabled={isSuper}
-                            onChange={() => handleToggleRight(m.name, 'canCreate')}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
-                          />
-                        </label>
+                      <td className="px-4 py-3 text-center">
+                        <input 
+                          type="checkbox"
+                          disabled={isSuperAdmin || !rights.canView}
+                          checked={isSuperAdmin || rights.canCreate}
+                          onChange={() => handleToggleRight(mod.name, 'canCreate')}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
+                        />
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        <label className="inline-flex items-center justify-center p-1 rounded hover:bg-slate-100 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={isSuper || rights.canEdit}
-                            disabled={isSuper}
-                            onChange={() => handleToggleRight(m.name, 'canEdit')}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
-                          />
-                        </label>
+                      <td className="px-4 py-3 text-center">
+                        <input 
+                          type="checkbox"
+                          disabled={isSuperAdmin || !rights.canView}
+                          checked={isSuperAdmin || rights.canEdit}
+                          onChange={() => handleToggleRight(mod.name, 'canEdit')}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
+                        />
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        <label className="inline-flex items-center justify-center p-1 rounded hover:bg-slate-100 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={isSuper || rights.canDelete}
-                            disabled={isSuper}
-                            onChange={() => handleToggleRight(m.name, 'canDelete')}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
-                          />
-                        </label>
+                      <td className="px-4 py-3 text-center">
+                        <input 
+                          type="checkbox"
+                          disabled={isSuperAdmin || !rights.canView}
+                          checked={isSuperAdmin || rights.canDelete}
+                          onChange={() => handleToggleRight(mod.name, 'canDelete')}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 disabled:opacity-50 cursor-pointer"
+                        />
                       </td>
                     </tr>
                   );
@@ -201,12 +266,16 @@ export const UserAccessRightsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Info notice box */}
-      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex gap-2">
-        <ShieldCheck className="w-4 h-4 text-blue-500 shrink-0" />
-        <p className="font-semibold leading-relaxed">
-          User-level rights override role-level mappings. If a user is granted View rights directly, it guarantees access even if their role module matrix is unselected.
-        </p>
+      {/* Access matrix warning banner */}
+      <div className="flex gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-600">
+        <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+        <div>
+          <h4 className="text-xs font-bold text-slate-800">Permissions Inheritance Notice</h4>
+          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+            By default, users inherit access rights directly from their primary Role mappings. 
+            Any checkbox configured above acts as a <strong>User-level override</strong>, bypassing the default role permissions block entirely.
+          </p>
+        </div>
       </div>
     </div>
   );

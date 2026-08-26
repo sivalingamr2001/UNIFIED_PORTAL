@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
-import { useDatabase } from '../../shared/hooks/useDatabase';
+import { usePortalMessages } from '../../shared/hooks/usePortalMessages';
+import { modulesApi } from '../../api/endpoints';
+import type { ModuleModel } from '../../types/models';
 import { Shield, Key, Landmark, ShoppingCart, Factory, Zap, FileText, BarChart3, Lock, ArrowRight, UserCheck } from 'lucide-react';
 
 export const PortalDashboardPage: React.FC = () => {
   const { user, isPermittedModule } = useAuth();
-  const { modules, getMessage } = useDatabase();
+  const { getMessage } = usePortalMessages();
+  const [modules, setModules] = useState<ModuleModel[]>([]);
   const navigate = useNavigate();
 
   // Helper to map module name to graphic icon and routing path
@@ -97,8 +100,20 @@ export const PortalDashboardPage: React.FC = () => {
     }
   };
 
-  React.useEffect(() => {
-    if (!user) return;
+  useEffect(() => {
+    const fetchModules = async () => {
+      try {
+        const list = await modulesApi.list();
+        setModules(list);
+      } catch (err) {
+        console.error("Failed to load modules from API:", err);
+      }
+    };
+    fetchModules();
+  }, []);
+
+  useEffect(() => {
+    if (!user || modules.length === 0) return;
     const permitted = modules.filter(mod => isPermittedModule(mod.name));
     if (permitted.length === 1) {
       const singleMod = permitted[0];

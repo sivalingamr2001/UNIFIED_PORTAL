@@ -1,9 +1,40 @@
-import React from 'react';
-import { useDatabase } from '../../../shared/hooks/useDatabase';
+import React, { useState, useEffect } from 'react';
+import { usersApi, rolesApi, modulesApi, menusApi, roleMenuApi } from '../../../api/endpoints';
+import type { UserModel, RoleModel, ModuleModel, MenuModel, RoleMenuModel } from '../../../types/models';
 import { CircleCheckBig, CircleX } from 'lucide-react';
 
 export const AdminOverviewPage: React.FC = () => {
-  const { users, roles, modules, menuItems, roleModules } = useDatabase();
+  
+  const [users, setUsers] = useState<UserModel[]>([]);
+  const [roles, setRoles] = useState<RoleModel[]>([]);
+  const [modules, setModules] = useState<ModuleModel[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuModel[]>([]);
+  const [roleMenus, setRoleMenus] = useState<RoleMenuModel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadOverviewData = async () => {
+      try {
+        const [usersList, rolesList, modulesList, menusList, roleMenusList] = await Promise.all([
+          usersApi.list().catch(() => []),
+          rolesApi.list().catch(() => []),
+          modulesApi.list().catch(() => []),
+          menusApi.list().catch(() => []),
+          roleMenuApi.list().catch(() => [])
+        ]);
+        setUsers(usersList);
+        setRoles(rolesList);
+        setModules(modulesList);
+        setMenuItems(menusList);
+        setRoleMenus(roleMenusList);
+      } catch (err) {
+        console.error("Failed to load overview data from API:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadOverviewData();
+  }, []);
 
   const activeUsersCount = users.filter(u => u.status === 'Active').length;
   const activeRolesCount = roles.filter(r => r.status === 'Active').length;
@@ -26,8 +57,12 @@ export const AdminOverviewPage: React.FC = () => {
   // Helper to calculate mapping statistics dynamically
   const getAccessStats = (moduleName: string) => {
     const totalRoles = roles.length;
-    const permittedRoles = roleModules.filter(
-      rm => rm.moduleName.toLowerCase() === moduleName.toLowerCase() && rm.hasAccess
+    // Check role menu mappings for this module name
+    const permittedRoles = roles.filter(r => 
+      roleMenus.some(
+        rm => rm.roleName?.toLowerCase() === r.roleName.toLowerCase() &&
+              rm.moduleName?.toLowerCase() === moduleName.toLowerCase()
+      )
     ).length;
     
     const percentage = totalRoles > 0 ? (permittedRoles / totalRoles) * 100 : 0;
@@ -37,6 +72,17 @@ export const AdminOverviewPage: React.FC = () => {
       percent: percentage,
     };
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
+          <p className="text-xs font-medium text-slate-400">Loading overview...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -81,23 +127,23 @@ export const AdminOverviewPage: React.FC = () => {
           </h3>
           <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto pr-1">
             {users.slice(0, 6).map((u) => {
-              const initial = getInitial(u.name);
+              const initial = getInitial(u.fullName);
               const isInactive = u.status === 'Inactive';
               return (
-                <div key={u.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                <div key={u.userId} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${getUserAvatarBg(initial)}`}>
                       {initial}
                     </div>
                     <div>
-                      <div className="text-[12px] text-slate-900 font-semibold">{u.name}</div>
+                      <div className="text-[12px] text-slate-900 font-semibold">{u.fullName}</div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        {u.reportsTo ? `→ ${u.reportsTo}` : 'Root'}
+                        {u.reportsToName ? `→ ${u.reportsToName}` : 'Root'}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-purple-800 font-mono font-semibold">{u.role}</span>
+                    <span className="text-[10px] text-purple-800 font-mono font-semibold">{u.roleName}</span>
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${
                       isInactive 
                         ? 'bg-slate-100 text-slate-600 ring-1 ring-slate-200' 
