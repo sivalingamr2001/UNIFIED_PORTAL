@@ -1,3 +1,4 @@
+import type { QueryExecutionRequest, QueryExecutionResponse } from "@/types/domain";
 import { apiClient } from "./axiosClient";
 import type {
   RoleModel, ModuleModel, MenuModel, UserModel, RoleMenuModel, ModuleAccessModel,
@@ -174,3 +175,8 @@ export const userAccessRightsApi = {
   save: (data: UserAccessRightsModel) => apiClient.post<ProcedureResult>("/user-access-rights", data),
   removeAllForUser: (userId: number) => apiClient.delete<ProcedureResult>(`/user-access-rights/by-user/${userId}`),
 };
+
+export const queryApi = {
+  execute: (request: QueryExecutionRequest) =>
+    apiClient.post<QueryExecutionResponse>("/query/execute", request),
+}
