@@ -38,7 +38,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-slate-50">
+    <div className="h-screen w-full flex bg-slate-50 overflow-hidden max-lg:h-auto max-lg:min-h-screen max-lg:overflow-y-auto">
       {/* Left panel: Info & brand */}
       <div 
         className="hidden lg:flex flex-col justify-between w-[52%] relative overflow-hidden p-10"

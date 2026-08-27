@@ -160,7 +160,7 @@ function normalizeRows(data: unknown): JourneyItem[] {
       planTAT,
       actualTAT: numberOf(record, "actualTAT", "actualTat"),
       variance: numberOf(record, "variance", "tatVariance"),
-      status: derivedStatus.includes("delay") ? "Delayed" : derivedStatus.includes("risk") ? "At Risk" : "On Track",
+      status: (derivedStatus.includes("delay") ? "Delayed" : derivedStatus.includes("risk") ? "At Risk" : "On Track") as JourneyItem["status"],
       altRoute: Boolean(textOf(record, "altRoute", "alternateRoute", "alternateRoutingDesignator")),
       jobs: 1,
       delayedJobs: numberOf(record, "delayedJobs", "delayedJobCount"),
