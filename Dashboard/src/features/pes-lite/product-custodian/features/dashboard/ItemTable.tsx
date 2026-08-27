@@ -57,8 +57,7 @@ export const ItemTable = ({ items, onRowClick, onFilterChange, loading }: Props)
     return themeMaterial.withParams({
       borderColor: "transparent",
       headerBackgroundColor: "#F8FAFC",
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    })
+     })
   }, [])
 
   const columnDefs = useMemo<ColDef<PesConsolidatedData>[]>(

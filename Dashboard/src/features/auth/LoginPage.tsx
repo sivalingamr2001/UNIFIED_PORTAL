@@ -38,7 +38,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-slate-50" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen w-full flex bg-slate-50">
       {/* Left panel: Info & brand */}
       <div 
         className="hidden lg:flex flex-col justify-between w-[52%] relative overflow-hidden p-10"

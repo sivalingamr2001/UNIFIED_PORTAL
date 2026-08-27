@@ -76,7 +76,6 @@ export const StatCards = ({ custodianName, orgId }: StatCardsProps) => {
                 </span>
                 <span
                   className="text-[13px] font-black text-slate-700"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
                 >
                   {activeAms1Items.toLocaleString()}
                   <span className="font-normal text-slate-400">/{totalAms1Items.toLocaleString()}</span>
@@ -99,7 +98,6 @@ export const StatCards = ({ custodianName, orgId }: StatCardsProps) => {
                 </span>
                 <span
                   className="text-[13px] font-black text-slate-700"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
                 >
                   {activeAms2Items.toLocaleString()}
                   <span className="font-normal text-slate-400">/{totalAms2Items.toLocaleString()}</span>

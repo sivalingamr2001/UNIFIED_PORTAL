@@ -9,16 +9,22 @@ const PortalDashboardPage = React.lazy(() => import('../features/portal/PortalDa
 
 // Admin Module Pages
 const AdminLayout = React.lazy(() => import('../features/admin/AdminLayout'));
-const AdminOverviewPage = React.lazy(() => import('../features/admin/overview/AdminOverviewPage'));
-const UserMasterPage = React.lazy(() => import('../features/admin/user-master/UserMasterPage'));
-const RoleMasterPage = React.lazy(() => import('../features/admin/role-master/RoleMasterPage'));
-const ModuleMasterPage = React.lazy(() => import('../features/admin/module-master/ModuleMasterPage'));
-const MenuMasterPage = React.lazy(() => import('../features/admin/menu-master/MenuMasterPage'));
-const RoleModulePage = React.lazy(() => import('../features/admin/role-module/RoleModulePage'));
-const RoleMenuPage = React.lazy(() => import('../features/admin/role-menu/RoleMenuPage'));
-const UserAccessRightsPage = React.lazy(() => import('../features/admin/user-access-rights/UserAccessRightsPage'));
-const UserHierarchyPage = React.lazy(() => import('../features/admin/user-hierarchy/UserHierarchyPage'));
-const PortalMessagesPage = React.lazy(() => import('../features/admin/portal-messages/PortalMessagesPage'));
+const AdminOverviewPage = React.lazy(() => import('../features/admin/OverviewPage'));
+const UserMasterPage = React.lazy(() => import('../features/admin/UserMasterPage'));
+const RoleMasterPage = React.lazy(() => import('../features/admin/RoleMasterPage'));
+const ModuleMasterPage = React.lazy(() => import('../features/admin/ModuleMasterPage'));
+const MenuMasterPage = React.lazy(() => import('../features/admin/MenuMasterPage'));
+const RoleModulePage = React.lazy(() => import('../features/admin/RoleVsModulePage'));
+const RoleMenuPage = React.lazy(() => import('../features/admin/RoleVsMenuPage'));
+const UserAccessRightsPage = React.lazy(() => import('../features/admin/UserAccessRightsPage'));
+const UserHierarchyPage = React.lazy(() => import('../features/admin/UserHierarchyPage'));
+const PortalMessagesPage = () => (
+  <div className="p-6 bg-white border border-slate-200 rounded-lg shadow-sm">
+    <h2 className="text-sm font-bold text-slate-900 tracking-tight mb-2">Portal Messages</h2>
+    <p className="text-xs text-slate-500">This feature is currently under construction.</p>
+  </div>
+);
+
 
 // Other Module Pages
 const FinancePage = React.lazy(() => import('../features/finance/FinancePage'));

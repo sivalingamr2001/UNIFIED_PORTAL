@@ -24,7 +24,7 @@ export const AppShell: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden bg-slate-100 text-xs" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="flex flex-col h-screen w-full overflow-hidden bg-slate-100 text-xs">
       {/* Dynamic Header */}
       <Header />
       

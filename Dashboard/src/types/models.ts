@@ -3,25 +3,36 @@ export interface RoleModel {
   roleCode: string;
   roleName: string;
   status?: string;
+  sourceType?: string;
+  remarks?: string;
+  roleVersion?: number;
 }
 
 export interface ModuleModel {
   id: number;
   name: string;
+  moduleId?: number;
+  moduleName?: string;
   code?: string;
+  moduleCode?: string;
   description?: string;
   status?: string;
+  sortOrder?: number;
+  defaultMenu?: string;
 }
 
 export interface MenuModel {
   id: number;
   name: string;
+  menuId?: number;
+  menuName?: string;
   code?: string;
+  menuCode?: string;
   displayName?: string;
   path?: string;
-  moduleId?: number;
+  moduleId?: number | null;
   moduleName?: string;
-  parentMenuId?: number;
+  parentMenuId?: number | null;
   menuType?: string;
   nature?: string;
   sortOrder?: number;
@@ -39,26 +50,34 @@ export interface UserModel {
   roleName?: string;
   userType?: string;
   securityLevel?: number;
-  reportingTo?: number;
+  reportingTo?: number | null;
   reportsToName?: string;
   validFrom?: string;
   validTo?: string;
   status?: string;
   password?: string;
+  employeeId?: string;
+  maxSessions?: number;
+  loginWorkdaysOnly?: string;
+  loginFromTime?: string;
+  loginToTime?: string;
 }
 
 export interface RoleMenuModel {
   roleMenuId?: number;
   roleId: number;
-  roleName?: string;
+  roleName?: string | null;
   moduleId: number;
-  moduleName?: string;
+  moduleName?: string | null;
   menuId: number;
-  menuName?: string;
+  menuName?: string | null;
   permView?: string;
   permAdd?: string;
   permEdit?: string;
   permDelete?: string;
+  permExport?: string;
+  permApprove?: string;
+  restrictedColumns?: string | null;
 }
 
 export interface ModuleAccessModel {
@@ -66,28 +85,45 @@ export interface ModuleAccessModel {
   roleName: string;
   moduleId: number;
   moduleName: string;
-  hasAccess: boolean;
+  hasAccess?: boolean;
+  accessFlag?: string;
 }
 
 export interface OperatingUnitModel {
   operatingUnit: number;
   name?: string;
+  operatingUnitName?: string;
 }
 
 export interface OrganizationModel {
   organizationId: number;
   name?: string;
+  organizationCode?: string;
+}
+
+export interface OrgUnitLine {
+  uarId: number;
+  operatingUnit: number;
+  operatingUnitName?: string | null;
+  organizationId: number;
+  organizationCode?: string | null;
+  limitValue: number;
 }
 
 export interface UserAccessRightsModel {
-  id: number;
+  uarId?: number;
   userId: number;
-  roleId: number;
+  userName?: string | null;
+  accessChannel?: "SYSTEM" | "MOBILE" | "BOTH";
+  status?: string;
+  remarks?: string | null;
+  orgUnitsSelected?: number;
+  totalOrgUnits?: number;
+  orgUnits?: OrgUnitLine[];
+  id?: number;
+  roleId?: number;
   moduleId?: number;
   canView?: boolean;
-  userName?: string;
-  remarks?: string;
-  status?: string;
 }
 
 export interface ProcedureResult {
@@ -99,6 +135,7 @@ export interface ProcedureResult {
   menuId?: number;
   roleMenuId?: number;
   data?: any;
+  generatedCode?: string;
 }
 
 export interface LoginResponse {
