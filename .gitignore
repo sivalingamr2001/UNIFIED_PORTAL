@@ -13,3 +13,5 @@
 *.suo
 *.cache
 Artifact/wwwroot/**
+Artifact/wwwroot/index.html
+Artifact/wwwroot/assets/index.css

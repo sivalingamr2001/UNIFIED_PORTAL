@@ -28,11 +28,6 @@ const PortalMessagesPage = () => (
 
 
 // Other Module Pages
-const FinancePage = React.lazy(() => import('../features/finance/FinancePage'));
-const ScmPage = React.lazy(() => import('../features/scm/ScmPage'));
-const MesPage = React.lazy(() => import('../features/mes/MesPage'));
-const PmsPage = React.lazy(() => import('../features/pms/PmsPage'));
-const DmsPage = React.lazy(() => import('../features/dms/DmsPage'));
 const PesLitePage = React.lazy(() => import('../features/pes-lite/PesLitePage'));
 const ProductCustodianApp = React.lazy(() => import('../features/pes-lite/product-custodian/ProductCustodianApp'));
 const CommodityCustodianApp = React.lazy(() => import('../features/pes-lite/commodity-custodian/CommodityCustodianApp'));
@@ -287,9 +282,7 @@ export const router = createBrowserRouter([
         path: 'finance/*',
         element: (
           <ModuleRouteGuard module="finance">
-            <Suspense fallback={<PageLoader />}>
-              <FinancePage />
-            </Suspense>
+            <DynamicFeatureLoader module="finance" />
           </ModuleRouteGuard>
         ),
       },
@@ -298,9 +291,7 @@ export const router = createBrowserRouter([
         path: 'scm/*',
         element: (
           <ModuleRouteGuard module="scm">
-            <Suspense fallback={<PageLoader />}>
-              <ScmPage />
-            </Suspense>
+            <DynamicFeatureLoader module="scm" />
           </ModuleRouteGuard>
         ),
       },
@@ -309,9 +300,7 @@ export const router = createBrowserRouter([
         path: 'mes/*',
         element: (
           <ModuleRouteGuard module="mes">
-            <Suspense fallback={<PageLoader />}>
-              <MesPage />
-            </Suspense>
+            <DynamicFeatureLoader module="mes" />
           </ModuleRouteGuard>
         ),
       },
@@ -320,9 +309,7 @@ export const router = createBrowserRouter([
         path: 'pms/*',
         element: (
           <ModuleRouteGuard module="pms">
-            <Suspense fallback={<PageLoader />}>
-              <PmsPage />
-            </Suspense>
+            <DynamicFeatureLoader module="pms" />
           </ModuleRouteGuard>
         ),
       },
@@ -331,9 +318,7 @@ export const router = createBrowserRouter([
         path: 'dms/*',
         element: (
           <ModuleRouteGuard module="dms">
-            <Suspense fallback={<PageLoader />}>
-              <DmsPage />
-            </Suspense>
+            <DynamicFeatureLoader module="dms" />
           </ModuleRouteGuard>
         ),
       },
@@ -408,6 +393,10 @@ export const router = createBrowserRouter([
                 <ProductCustodianDashboardPage />
               </Suspense>
             ),
+          },
+          {
+            path: '*',
+            element: <DynamicFeatureLoader module="pes" />,
           },
         ],
       },
