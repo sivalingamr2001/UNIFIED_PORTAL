@@ -1,0 +1,12 @@
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\bin\Release\net8.0\DynamicTransaction.deps.json
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\bin\Release\net8.0\DynamicTransaction.dll
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\bin\Release\net8.0\DynamicTransaction.pdb
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.csproj.AssemblyReference.cache
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.GeneratedMSBuildEditorConfig.editorconfig
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.AssemblyInfoInputs.cache
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.AssemblyInfo.cs
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.csproj.CoreCompileInputs.cache
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.dll
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\refint\DynamicTransaction.dll
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\DynamicTransaction.pdb
+D:\Repo\PESLITE\PROJECTS\PESLITE_DASHBOARD\Backend\DynamicTransaction\obj\Release\net8.0\ref\DynamicTransaction.dll
