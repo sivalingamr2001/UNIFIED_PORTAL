@@ -1,292 +1,845 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Calendar, CircleHelp, ArrowRight, Funnel, ClipboardList, Factory, TrendingUp, TrendingDown } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import {
+  ChevronDown,
+  Filter,
+  Download,
+  CalendarDays,
+  CheckCircle2,
+  AlertTriangle,
+  Clock3,
+  Circle,
+  Info,
+  Route,
+  Truck,
+  ChevronRight,
+  CircleAlert,
+  CircleCheckBig,
+  BarChart3,
+  LayoutGrid,
+  RefreshCw,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+import { queryApi } from "@/api/endpoints";
 
-export const PlanningControlTowerPage: React.FC = () => {
-  const navigate = useNavigate();
+type StageStatus = "on-track" | "at-risk" | "delayed" | "not-started";
 
-  const sourceData = [
-    { segment: 'AMS1 In-house', plan: 6000, actual: 5700, gap: -300, pct: 95 },
-    { segment: 'AMS1 OSP', plan: 4000, actual: 3850, gap: -150, pct: 96 },
-    { segment: 'AMS2 In-house', plan: 5000, actual: 4250, gap: -750, pct: 85 },
-    { segment: 'AMS2 OSP', plan: 3500, actual: 2950, gap: -550, pct: 84 },
+type StageBlock = {
+  name: string;
+  pend?: string;
+  scrap?: string;
+  comp?: string;
+  status: StageStatus;
+  warning?: boolean;
+};
+
+type JourneyItem = {
+  id: number;
+  item: string;
+  location: string;
+  totalOSPs: number;
+  planTAT: number;
+  actualTAT: number;
+  variance: number;
+  status: "On Track" | "At Risk" | "Delayed";
+  altRoute?: boolean;
+  jobs?: number;
+  delayedJobs?: number;
+  stages: StageBlock[];
+  jobId?: string;
+  jobVariance?: number;
+  jobCards?: JourneyItem[];
+};
+
+type ApiRecord = Record<string, unknown>;
+
+const queryNumber = Number(
+  import.meta.env.VITE_PES_CONTROL_TOWER_QUERY_NUMBER ?? "1"
+);
+
+function valueOf(record: ApiRecord, ...keys: string[]): unknown {
+  const entry = Object.entries(record).find(([key]) =>
+    keys.some((candidate) => key.toLowerCase() === candidate.toLowerCase())
+  );
+  return entry?.[1];
+}
+
+function textOf(record: ApiRecord, ...keys: string[]): string {
+  const value = valueOf(record, ...keys);
+  return value == null ? "" : String(value);
+}
+
+function numberOf(record: ApiRecord, ...keys: string[]): number {
+  const value = Number(valueOf(record, ...keys));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function booleanOf(record: ApiRecord, ...keys: string[]): boolean {
+  const value = valueOf(record, ...keys);
+  return value === true || value === 1 || String(value).toLowerCase() === "true";
+}
+
+function parseStages(record: ApiRecord): StageBlock[] {
+  const rawStages = valueOf(record, "stages", "stageData", "ospStages");
+  let stages: unknown[] = Array.isArray(rawStages) ? rawStages : [];
+  if (typeof rawStages === "string") {
+    try {
+      const parsed = JSON.parse(rawStages);
+      stages = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      stages = [];
+    }
+  }
+
+  if (stages.length === 0) {
+    for (let index = 1; index <= 6; index += 1) {
+      const name = textOf(record, `OPN${index}_OPERATION_DESC`);
+      if (!name) continue;
+      const started = textOf(record, `OPN${index}_PROCESS_START_DATE`);
+      const completed = textOf(record, `OPN${index}_PROCESS_COMPLETION_DATE`);
+      stages.push({
+        name,
+        pend: textOf(record, `OPN${index}_QTY_QUEUE`) || undefined,
+        scrap: textOf(record, `OPN${index}_QTY_SCRAP`) || undefined,
+        comp: textOf(record, `OPN${index}_QTY_COMP`) || undefined,
+        status: completed
+          ? "on-track"
+          : started
+            ? "at-risk"
+            : "not-started",
+        warning: Boolean(started && !completed),
+      });
+    }
+  }
+
+  return stages.map((stage, index) => {
+    const data = (stage ?? {}) as ApiRecord;
+    const status = textOf(data, "status", "stageStatus").toLowerCase();
+    return {
+      name: textOf(data, "name", "stageName", "ospName") || `OSP ${index + 1}`,
+      pend: textOf(data, "pend", "pending", "queue") || undefined,
+      scrap: textOf(data, "scrap", "scrapped", "scrapCount") || undefined,
+      comp: textOf(data, "comp", "completed", "completion") || undefined,
+      status: status.includes("delay")
+        ? "delayed"
+        : status.includes("risk")
+          ? "at-risk"
+          : status.includes("start")
+            ? "not-started"
+            : "on-track",
+      warning: booleanOf(data, "warning", "hasWarning"),
+    };
+  });
+}
+
+function normalizeRows(data: unknown): JourneyItem[] {
+  const rows = Array.isArray(data) ? data : [];
+  const jobRows = rows.flatMap((value, index) => {
+    if (!value || typeof value !== "object") return [];
+    const record = value as ApiRecord;
+    const stages = parseStages(record);
+    const status = textOf(record, "status", "overallStatus").toLowerCase();
+    const derivedStatus = status || (stages.some((stage) => stage.status === "at-risk") ? "at-risk" : "on-track");
+    const totalOSPs = stages.length || numberOf(record, "totalOSPs", "ospCount", "totalOsp");
+    const planTAT = numberOf(record, "planTAT", "plannedTat", "plannedTAT") || stages.reduce((total, stage) => total + Number(stage.scrap ?? 0), 0);
+    return [{
+      id: numberOf(record, "id", "itemId", "jobId") || index + 1,
+      item: textOf(record, "item", "itemName", "product", "productName", "itemNo", "ITEM_NO") || "Unnamed item",
+      location: textOf(record, "location", "plant", "customerLocation", "organizationId"),
+      totalOSPs,
+      planTAT,
+      actualTAT: numberOf(record, "actualTAT", "actualTat"),
+      variance: numberOf(record, "variance", "tatVariance"),
+      status: derivedStatus.includes("delay") ? "Delayed" : derivedStatus.includes("risk") ? "At Risk" : "On Track",
+      altRoute: Boolean(textOf(record, "altRoute", "alternateRoute", "alternateRoutingDesignator")),
+      jobs: 1,
+      delayedJobs: numberOf(record, "delayedJobs", "delayedJobCount"),
+      jobId: textOf(record, "jobId", "jobNumber", "jobNo", "JOB_NO") || undefined,
+      jobVariance: numberOf(record, "jobVariance"),
+      stages,
+    }];
+  });
+
+  const grouped = new Map<string, JourneyItem[]>();
+  for (const job of jobRows) {
+    const key = `${job.item}|${job.location}`;
+    const existing = grouped.get(key) ?? [];
+    existing.push(job);
+    grouped.set(key, existing);
+  }
+
+  return Array.from(grouped.values()).map((jobCards, index) => {
+    const firstJob = jobCards[0];
+    const status = jobCards.some((job) => job.status === "Delayed")
+      ? "Delayed"
+      : jobCards.some((job) => job.status === "At Risk")
+        ? "At Risk"
+        : "On Track";
+
+    return {
+      ...firstJob,
+      id: index + 1,
+      status,
+      totalOSPs: Math.max(...jobCards.map((job) => job.totalOSPs)),
+      planTAT: Math.max(...jobCards.map((job) => job.planTAT)),
+      actualTAT: Math.max(...jobCards.map((job) => job.actualTAT)),
+      variance: Math.max(...jobCards.map((job) => job.variance)),
+      jobs: jobCards.length,
+      delayedJobs: jobCards.filter((job) => job.status === "Delayed").length,
+      jobId: undefined,
+      jobVariance: undefined,
+      jobCards,
+    };
+  });
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "On Track":
+      return "bg-green-100 text-green-700";
+    case "At Risk":
+      return "bg-amber-100 text-amber-700";
+    case "Delayed":
+      return "bg-red-100 text-red-600";
+    default:
+      return "bg-gray-100 text-gray-600";
+  }
+}
+
+function stageRing(status: StageStatus) {
+  switch (status) {
+    case "on-track":
+      return "ring-green-400";
+    case "at-risk":
+      return "ring-amber-400";
+    case "delayed":
+      return "ring-red-400";
+    default:
+      return "ring-gray-200";
+  }
+}
+
+function stageCellBg(status: StageStatus) {
+  switch (status) {
+    case "on-track":
+      return "bg-green-50 border-green-300";
+    case "at-risk":
+      return "bg-amber-50 border-amber-300";
+    case "delayed":
+      return "bg-red-50 border-red-200";
+    default:
+      return "bg-gray-50 border-gray-200";
+  }
+}
+
+export default function PlanningExecutionControlTower() {
+  const [journeyData, setJourneyData] = useState<JourneyItem[]>([]);
+  const [expandedRows, setExpandedRows] = useState<number[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = async () => {
+    if (!Number.isInteger(queryNumber) || queryNumber <= 0) {
+      setError("Set VITE_PES_CONTROL_TOWER_QUERY_NUMBER to a valid query number.");
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await queryApi.execute({ QueryNumber: queryNumber });
+      const groupedRows = normalizeRows(response.Data ?? response.data ?? []);
+      setJourneyData(groupedRows);
+      setExpandedRows(groupedRows.map((row) => row.id));
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not load control tower data."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(loadTimer);
+  }, []);
+
+  const toggleRow = (id: number) => {
+    setExpandedRows((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalJobs = journeyData.reduce((total, row) => total + (row.jobs ?? 1), 0);
+  const onTrack = journeyData.filter((row) => row.status === "On Track").reduce((total, row) => total + (row.jobs ?? 1), 0);
+  const atRisk = journeyData.filter((row) => row.status === "At Risk").reduce((total, row) => total + (row.jobs ?? 1), 0);
+  const delayed = journeyData.filter((row) => row.status === "Delayed").reduce((total, row) => total + (row.jobs ?? 1), 0);
+  const average = (selector: (row: JourneyItem) => number) =>
+    journeyData.length === 0 ? 0 : journeyData.reduce((total, row) => total + selector(row), 0) / journeyData.length;
+  const percentage = (value: number) => totalJobs === 0 ? "0%" : `${Math.round((value / totalJobs) * 100)}%`;
+  const statusData = [
+    { name: "On Track", value: onTrack, color: "#16a34a" },
+    { name: "At Risk", value: atRisk, color: "#d97706" },
+    { name: "Delayed", value: delayed, color: "#dc2626" },
   ];
-
-  const productPerformance = [
-    { code: 'FG-1001', desc: 'Runner 1.5 Ton - Model X', category: 'AMS1', source: 'In-house', plan: 500, actual: 490, gap: -10, pct: 98, color: 'bg-emerald-500' },
-    { code: 'FG-1002', desc: 'Runner 1.0 Ton - Model Y', category: 'AMS1', source: 'OSP', plan: 420, actual: 410, gap: -10, pct: 98, color: 'bg-emerald-500' },
-    { code: 'FG-2001', desc: 'Repeater 2.0 Ton - Model Z', category: 'AMS2', source: 'In-house', plan: 600, actual: 480, gap: -120, pct: 80, color: 'bg-red-500' },
-    { code: 'FG-2002', desc: 'Repeater 1.5 Ton - Model A', category: 'AMS2', source: 'OSP', plan: 550, actual: 430, gap: -120, pct: 78, color: 'bg-red-500' },
-    { code: 'FG-2003', desc: 'Stranger 2.5 Ton - Model B', category: 'AMS2', source: 'OSP', plan: 700, actual: 560, gap: -140, pct: 80, color: 'bg-red-500' },
-    { code: 'FG-1003', desc: 'Runner 0.5 Ton - Model C', category: 'AMS1', source: 'In-house', plan: 480, actual: 460, gap: -20, pct: 96, color: 'bg-emerald-500' },
-    { code: 'FG-1004', desc: 'Runner 2.0 Ton - Model D', category: 'AMS1', source: 'OSP', plan: 380, actual: 360, gap: -20, pct: 95, color: 'bg-emerald-500' },
-    { code: 'FG-2004', desc: 'Additional Runner 1.0 Ton - Model E', category: 'AMS2', source: 'In-house', plan: 450, actual: 370, gap: -80, pct: 82, color: 'bg-red-500' },
-    { code: 'FG-2005', desc: 'Stranger 1.0 Ton - Model F', category: 'AMS2', source: 'OSP', plan: 420, actual: 340, gap: -80, pct: 81, color: 'bg-red-500' },
-    { code: 'FG-2006', desc: 'Repeater 0.5 Ton - Model G', category: 'AMS2', source: 'In-house', plan: 360, actual: 310, gap: -50, pct: 86, color: 'bg-amber-500' },
+  const varianceData = [
+    { stage: "Pre-Processing", value: average((row) => row.stages.reduce((sum, stage) => sum + Number.parseFloat(stage.pend ?? "0"), 0)), color: "#fca5a5" },
+    { stage: "Processing", value: average((row) => row.stages.reduce((sum, stage) => sum + Number.parseFloat(stage.scrap ?? "0"), 0)), color: "#ef4444" },
+    { stage: "Post-Processing", value: average((row) => row.stages.reduce((sum, stage) => sum + Number.parseFloat(stage.comp ?? "0"), 0)), color: "#4ade80" },
   ];
-
-  const topGaps = [
-    { code: 'FG-2003', gap: -140, pct: 100 },
-    { code: 'FG-2002', gap: -120, pct: 85.7 },
-    { code: 'FG-2001', gap: -120, pct: 85.7 },
-    { code: 'FG-2008', gap: -120, pct: 85.7 },
-    { code: 'FG-2011', gap: -95, pct: 67.8 },
-  ];
+  const delayedOSPs = journeyData.flatMap((row) => row.stages
+    .filter((stage) => stage.status === "delayed" || stage.status === "at-risk")
+    .map((stage) => ({ name: stage.name, value: Math.abs(row.variance) })))
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 5);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-      {/* Subheader status bar */}
-      <div 
-        className="flex items-center justify-between px-6 py-2 border-b shrink-0 bg-white border-slate-200"
-      >
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => navigate('/pes')}
-            className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors"
-          >
-            ← Back to PES Overview
-          </button>
-          <h1 className="text-sm font-bold text-slate-800 tracking-tight uppercase leading-none">
-            PLANNING &amp; EXECUTION CONTROL TOWER
-          </h1>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            Apr 20 – Apr 26, 2026 (WTD)
-          </button>
-          <button className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
-            <CircleHelp className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Panel scroll container */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4" style={{ scrollbarWidth: 'thin' }}>
-        
-        {/* Title */}
-        <div className="flex items-start justify-between">
+    <div className="flex h-screen w-full bg-slate-100 overflow-hidden font-sans text-sm">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="bg-[#0f1b2d] px-5 py-3 flex items-center justify-between shrink-0">
           <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-widest">
-                WTD Production Plan vs Actuals
-              </h2>
-            </div>
-            <p className="text-[11px] text-slate-500 font-medium">
-              Product-wise performance categorized by AMS1/2 and In-house / OSP
+            <h1 className="text-[13px] font-bold text-white tracking-wide uppercase leading-tight">
+              Planning & Execution Control Tower
+            </h1>
+            <p className="text-[11px] text-blue-300/70 mt-0.5">
+              OSP Jobs – Multi-OSP Train Journey
             </p>
           </div>
-          <button className="flex items-center gap-1.5 border border-slate-300 bg-white rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-            <Funnel className="w-3.5 h-3.5 text-slate-400" /> Filter
-          </button>
-        </div>
 
-        {/* KPIs row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 flex items-center gap-4 px-5 py-4 shadow-sm">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-blue-50">
-              <ClipboardList className="w-5 h-5 text-blue-600" />
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <FilterChip label="Date Range" value="Last 30 Days" icon={<CalendarDays className="w-3 h-3 opacity-50" />} />
+            <FilterChip label="Job Type" value="All" icon={<ChevronDown className="w-3 h-3 opacity-50" />} />
+            <FilterChip label="Product" value="All" icon={<ChevronDown className="w-3 h-3 opacity-50" />} />
+            <FilterChip label="Customer Location" value="All" icon={<ChevronDown className="w-3 h-3 opacity-50" />} />
+
+            <button className="flex items-center gap-1.5 border border-blue-400 text-blue-300 rounded px-3 py-1.5 text-[11px] font-semibold hover:bg-blue-500/20 transition-colors">
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+            </button>
+
+            <button className="border border-white/20 rounded p-1.5 text-white/50 hover:text-white hover:border-white/50 transition-colors">
+              <Download className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {isLoading && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              Loading control tower data...
             </div>
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">WTD Plan</div>
-              <div className="text-2xl font-bold leading-tight text-blue-600">18,500</div>
-              <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Units</div>
+          )}
+          {error && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <span>{error}</span>
+              <button className="inline-flex items-center gap-1.5 font-semibold hover:text-red-900" onClick={() => void loadData()}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry
+              </button>
             </div>
+          )}
+          {!isLoading && !error && journeyData.length === 0 && (
+            <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+              No control tower records were returned by the query.
+            </div>
+          )}
+
+          {/* KPI cards */}
+          <div className="flex gap-2 flex-wrap">
+            <KpiCard
+              label="Total OSP Jobs"
+              value={totalJobs}
+              sub="Across all stages"
+              icon={<LayoutGrid className="w-4 h-4 text-blue-600" />}
+              iconBg="bg-blue-50"
+            />
+            <KpiCard
+              label="On Track"
+              value={onTrack}
+              sub={percentage(onTrack)}
+              icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
+              iconBg="bg-green-50"
+              subClass="text-green-600"
+            />
+            <KpiCard
+              label="At Risk"
+              value={atRisk}
+              sub={percentage(atRisk)}
+              icon={<AlertTriangle className="w-4 h-4 text-amber-600" />}
+              iconBg="bg-amber-50"
+              subClass="text-amber-600"
+            />
+            <KpiCard
+              label="Delayed"
+              value={delayed}
+              sub={percentage(delayed)}
+              icon={<CircleAlert className="w-4 h-4 text-red-600" />}
+              iconBg="bg-red-50"
+              subClass="text-red-600"
+            />
+            <KpiCard
+              label="Avg Plan TAT"
+              value={average((row) => row.planTAT).toFixed(1)}
+              sub="Days"
+              icon={<Clock3 className="w-4 h-4 text-slate-500" />}
+              iconBg="bg-slate-100"
+            />
+            <KpiCard
+              label="Avg Actual TAT"
+              value={average((row) => row.actualTAT).toFixed(1)}
+              sub="Days"
+              icon={<CalendarDays className="w-4 h-4 text-slate-500" />}
+              iconBg="bg-slate-100"
+            />
+            <KpiCard
+              label="Avg Variance"
+              value={`+${average((row) => row.variance).toFixed(1)}`}
+              sub="Days"
+              icon={<BarChart3 className="w-4 h-4 text-red-500" />}
+              iconBg="bg-red-50"
+              subClass="text-red-500"
+            />
+            <KpiCard
+              label="On-time Completion"
+              value={percentage(onTrack)}
+              sub="Current query"
+              icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
+              iconBg="bg-green-50"
+              subClass="text-green-600"
+            />
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 flex items-center gap-4 px-5 py-4 shadow-sm">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-emerald-50">
-              <Factory className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">WTD Actuals</div>
-              <div className="text-2xl font-bold leading-tight text-emerald-600">16,750</div>
-              <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Units</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 flex items-center gap-4 px-5 py-4 shadow-sm">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-amber-50">
-              <TrendingUp className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Achievement</div>
-              <div className="text-2xl font-bold leading-tight text-amber-600 font-mono">90.5%</div>
-              <div className="text-[10px] text-slate-400 mt-0.5 font-medium">vs Plan</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 flex items-center gap-4 px-5 py-4 shadow-sm">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-red-50">
-              <TrendingDown className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Shortfall</div>
-              <div className="text-2xl font-bold leading-tight text-red-600">1,750</div>
-              <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Units</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Intermediate metrics row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="text-xs font-bold uppercase tracking-wider mb-3 text-slate-700">AMS Performance Summary (WTD)</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-emerald-250 p-3 bg-emerald-50/30">
-                <div className="text-xs font-bold mb-2 text-emerald-800">AMS1 <span className="font-normal text-slate-400">(RUNNER)</span></div>
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <div>
-                    <div className="text-[10px] text-slate-400">Plan</div>
-                    <div className="text-sm font-bold text-slate-800">10,000</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Actual</div>
-                    <div className="text-sm font-bold text-slate-800">9,550</div>
-                  </div>
-                </div>
-                <div className="text-base font-bold text-emerald-800">95.5%</div>
-                <div className="text-[9px] text-slate-400 mb-2">Achievement</div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  <span className="text-[10px] font-semibold text-emerald-700">Healthy</span>
-                </div>
+          {/* Journey table */}
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] font-bold text-gray-800 tracking-wide uppercase">
+                  Multi-OSP Train Journey – All Items
+                </span>
+                <Info className="w-3.5 h-3.5 text-gray-400" />
               </div>
 
-              <div className="rounded-lg border border-red-250 p-3 bg-red-50/30">
-                <div className="text-xs font-bold mb-2 text-red-800">AMS2 <span className="font-normal text-slate-400 text-[9px]">(REPEATER, STRANGER...)</span></div>
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <div>
-                    <div className="text-[10px] text-slate-400">Plan</div>
-                    <div className="text-sm font-bold text-slate-800">8,500</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Actual</div>
-                    <div className="text-sm font-bold text-slate-800">7,200</div>
-                  </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                  <LegendDot color="bg-green-500" label="On Track" />
+                  <LegendDot color="bg-amber-500" label="At Risk" />
+                  <LegendDot color="bg-red-500" label="Delayed" />
+                  <LegendDot color="bg-gray-300" label="Not Started" />
                 </div>
-                <div className="text-base font-bold text-red-800">84.7%</div>
-                <div className="text-[9px] text-slate-400 mb-2">Achievement</div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                  <span className="text-[10px] font-semibold text-red-700">At Risk</span>
+
+                <div className="flex items-center gap-1 text-[10px] text-purple-600 border border-purple-200 bg-purple-50 rounded px-2 py-0.5">
+                  <Route className="w-3 h-3" />
+                  <span className="font-semibold">Alt. Route Available</span>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="text-xs font-bold uppercase tracking-wider mb-3 text-slate-700">Production Source Performance (WTD)</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[10px] text-slate-400 font-semibold">
-                    <th className="pb-2 text-left">Segment</th>
-                    <th className="pb-2 text-right">Plan (Units)</th>
-                    <th className="pb-2 text-right">Actual (Units)</th>
-                    <th className="pb-2 text-right">Gap (Units)</th>
-                    <th className="pb-2 text-right">Achievement (%)</th>
-                    <th className="pb-2 text-left pl-3">vs Plan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {sourceData.map(s => (
-                    <tr key={s.segment}>
-                      <td className="py-2 font-medium text-slate-700">{s.segment}</td>
-                      <td className="py-2 text-right font-mono">{s.plan.toLocaleString()}</td>
-                      <td className="py-2 text-right font-mono">{s.actual.toLocaleString()}</td>
-                      <td className="py-2 text-right font-mono font-semibold text-red-600">{s.gap}</td>
-                      <td className="py-2 text-right font-mono font-bold text-slate-700">{s.pct}%</td>
-                      <td className="py-2 pl-3 w-24">
-                        <div className="h-1.5 rounded-full w-full bg-slate-100 overflow-hidden">
-                          <div 
-                            className={`h-1.5 rounded-full ${s.pct >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                            style={{ width: `${s.pct}%` }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Table header */}
+            <div className="flex items-center bg-gray-50 border-b border-gray-100 text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-2">
+              <div className="w-6 shrink-0"></div>
+              <div className="w-36 shrink-0 py-2 px-2">Item</div>
+              <div className="w-14 shrink-0 text-center py-2">Total OSPs</div>
+              <div className="w-16 shrink-0 text-center py-2">Plan TAT (Days)</div>
+              <div className="w-16 shrink-0 text-center py-2">Actual TAT (Days)</div>
+              <div className="w-16 shrink-0 text-center py-2">Variance (Days)</div>
+              <div className="w-24 shrink-0 text-center py-2">Status</div>
+              <div className="flex-1 py-2 px-2 flex gap-4 text-center">
+                <span className="flex-1">OSP 1</span>
+                <span className="flex-1">OSP 2</span>
+                <span className="flex-1">OSP 3</span>
+                <span className="flex-1">OSP 4</span>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Product performance & gaps grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="text-xs font-bold uppercase tracking-wider mb-3 text-slate-700">Product Performance (WTD)</div>
-            <div className="overflow-x-auto max-h-96">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[10px] text-slate-400 font-semibold">
-                    <th className="pb-2 text-left">FG Code</th>
-                    <th className="pb-2 text-left">FG Description</th>
-                    <th className="pb-2 text-center">Category</th>
-                    <th className="pb-2 text-center">Source</th>
-                    <th className="pb-2 text-right">Plan</th>
-                    <th className="pb-2 text-right">Actual</th>
-                    <th className="pb-2 text-right">Gap</th>
-                    <th className="pb-2 text-right">Ach %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {productPerformance.map(p => (
-                    <tr key={p.code} className="hover:bg-slate-50/50">
-                      <td className="py-2 font-mono font-bold text-blue-700">{p.code}</td>
-                      <td className="py-2 text-slate-700 truncate max-w-[150px]" title={p.desc}>{p.desc}</td>
-                      <td className="py-2 text-center">
-                        <span className={`px-1 rounded text-[9px] font-bold ${p.category === 'AMS1' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
-                          {p.category}
+            {journeyData.map((row) => (
+              <div key={row.id} className="border-b border-gray-100 last:border-b-0">
+                <div
+                  className={`flex items-center px-2 py-2.5 cursor-pointer transition-colors hover:bg-slate-50 ${expandedRows.includes(row.id) ? "bg-blue-50/30" : ""
+                    }`}
+                  onClick={() => toggleRow(row.id)}
+                >
+                  <div className="w-6 shrink-0 flex justify-center text-gray-400 hover:text-blue-500">
+                    <ChevronRight
+                      className={`w-3.5 h-3.5 transition-transform ${expandedRows.includes(row.id) ? "rotate-90" : ""
+                        }`}
+                    />
+                  </div>
+
+                  <div className="w-36 shrink-0 px-2">
+                    <div className="flex flex-wrap items-center gap-1 mb-0.5">
+                      <span className="text-[11px] font-bold text-gray-800 leading-tight">
+                        {row.item}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[9px] text-gray-400">{row.location}</span>
+                      {row.altRoute && (
+                        <span className="inline-flex items-center gap-0.5 bg-purple-50 text-purple-600 border border-purple-200 rounded px-1 py-[1px] text-[8px] font-semibold">
+                          <Route className="w-3 h-3" />
+                          Alt. Route
                         </span>
-                      </td>
-                      <td className="py-2 text-center text-slate-500">{p.source}</td>
-                      <td className="py-2 text-right font-mono">{p.plan}</td>
-                      <td className="py-2 text-right font-mono">{p.actual}</td>
-                      <td className="py-2 text-right font-mono font-semibold text-red-600">{p.gap}</td>
-                      <td className="py-2 text-right font-mono font-bold text-slate-800">{p.pct}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="w-14 shrink-0 text-center font-mono text-[12px] font-semibold text-gray-700">
+                    {row.totalOSPs}
+                  </div>
+                  <div className="w-16 shrink-0 text-center font-mono text-[12px] font-semibold text-gray-700">
+                    {row.planTAT}
+                  </div>
+                  <div className="w-16 shrink-0 text-center font-mono text-[12px] font-semibold text-gray-700">
+                    {row.actualTAT}
+                  </div>
+                  <div
+                    className={`w-16 shrink-0 text-center font-mono text-[12px] font-bold ${row.variance > 0 ? "text-red-500" : "text-gray-500"
+                      }`}
+                  >
+                    {row.variance > 0 ? `+${row.variance}` : row.variance}
+                  </div>
+
+                  <div className="w-24 shrink-0 flex items-center justify-center gap-1">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${statusBadge(row.status)}`}>
+                      {row.status}
+                    </span>
+                    {row.status === "Delayed" && <CircleAlert className="w-3.5 h-3.5 text-red-500" />}
+                  </div>
+
+                  <div className="flex-1 overflow-x-auto">
+                    <div className="flex items-center gap-1">
+                      {row.stages.map((stage, idx) => {
+                        const isEmpty = stage.status === "not-started";
+                        return (
+                          <div key={idx} className="flex items-center gap-1 shrink-0">
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <Truck className="w-4 h-4 text-blue-500" />
+                              <ChevronRight className="w-3 h-3 text-blue-400" />
+                            </div>
+
+                            <div
+                              className={`flex flex-col items-stretch rounded ${isEmpty ? "ring-1 ring-gray-200" : `ring-1 ${stageRing(stage.status)}`
+                                } bg-white overflow-hidden`}
+                            >
+                              <div className="flex divide-x divide-gray-100">
+                                {["Pend", "Scrap", "Comp"].map((part) => {
+                                  const value =
+                                    part === "Pend"
+                                      ? stage.pend
+                                      : part === "Scrap"
+                                        ? stage.scrap
+                                        : stage.comp;
+
+                                  const bgClass = isEmpty
+                                    ? "bg-gray-50 border-gray-200"
+                                    : stageCellBg(stage.status);
+
+                                  return (
+                                    <div
+                                      key={part}
+                                      className={`flex flex-col items-center px-1.5 py-1 border ${bgClass}`}
+                                    >
+                                      <span className="text-[8px] font-semibold text-gray-400 leading-none uppercase tracking-wide">
+                                        {part}
+                                      </span>
+                                      <span className="text-[10px] font-semibold text-gray-700 font-mono leading-tight my-[3px]">
+                                        {value ?? "-"}
+                                      </span>
+                                      {!isEmpty ? (
+                                        stage.warning ? (
+                                          <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-amber-500 text-white text-[5px] font-bold">
+                                            !
+                                          </span>
+                                        ) : (
+                                          <CircleCheckBig className="w-2 h-2 text-green-500" />
+                                        )
+                                      ) : (
+                                        <Circle className="w-2 h-2 text-gray-300" />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="text-center text-[8px] font-medium text-gray-400 bg-gray-50 border-t border-gray-100 px-1 py-[2px] tracking-wide truncate">
+                                {stage.name}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {expandedRows.includes(row.id) && (
+                  <div className="border-t border-blue-100">
+                    {(row.jobCards ?? [row]).slice(0, 3).map((jobCard) => (
+                      <div key={jobCard.jobId ?? jobCard.id} className="flex items-center pl-10 pr-2 py-1.5 bg-slate-50 border-t border-dashed border-gray-200 hover:bg-blue-50/40 transition-colors">
+                      <div className="w-36 shrink-0 px-2">
+                        <p className="text-[11px] font-semibold text-blue-600">
+                          {jobCard.jobId ?? `Item ${jobCard.id}`}
+                        </p>
+                      </div>
+                      <div className="w-14 shrink-0 text-center font-mono text-[11px] text-gray-600">
+                        {jobCard.totalOSPs}
+                      </div>
+                      <div className="w-16 shrink-0 text-center font-mono text-[11px] text-gray-600">
+                        {jobCard.planTAT}
+                      </div>
+                      <div className="w-16 shrink-0 text-center font-mono text-[11px] text-gray-600">
+                        {jobCard.actualTAT}
+                      </div>
+                      <div className="w-16 shrink-0 text-center font-mono text-[11px] font-semibold text-green-600">
+                        {jobCard.jobVariance ?? jobCard.variance}
+                      </div>
+                      <div className="w-24 shrink-0 flex justify-center">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${statusBadge(jobCard.status)}`}>
+                          {jobCard.status}
+                        </span>
+                      </div>
+                      <div className="flex-1 overflow-x-auto">
+                        <div className="flex items-center gap-1">
+                          {jobCard.stages.map((stage, idx) => (
+                            <div key={idx} className="flex items-center gap-1 shrink-0">
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <Truck className="w-4 h-4 text-blue-500" />
+                                <ChevronRight className="w-3 h-3 text-blue-400" />
+                              </div>
+                              <div
+                                className={`flex flex-col items-stretch rounded ring-1 ${stage.status === "on-track"
+                                  ? "ring-green-400"
+                                  : stage.status === "at-risk"
+                                    ? "ring-amber-400"
+                                    : stage.status === "delayed"
+                                      ? "ring-red-400"
+                                      : "ring-gray-200"
+                                  } bg-white overflow-hidden`}
+                              >
+                                <div className="flex divide-x divide-gray-100">
+                                  <div className="flex flex-col items-center px-1.5 py-1 border-green-300 bg-green-50">
+                                    <span className="text-[8px] font-semibold text-gray-400 leading-none uppercase tracking-wide">
+                                      Pend
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-gray-700 font-mono leading-tight my-[3px]">
+                                      {stage.pend ?? "-"}
+                                    </span>
+                                    <CircleCheckBig className="w-2 h-2 text-green-500" />
+                                  </div>
+                                  <div className="flex flex-col items-center px-1.5 py-1 border-green-300 bg-green-50">
+                                    <span className="text-[8px] font-semibold text-gray-400 leading-none uppercase tracking-wide">
+                                      Scrap
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-gray-700 font-mono leading-tight my-[3px]">
+                                      {stage.scrap ?? "-"}
+                                    </span>
+                                    <CircleCheckBig className="w-2 h-2 text-green-500" />
+                                  </div>
+                                  <div className="flex flex-col items-center px-1.5 py-1 border-green-300 bg-green-50">
+                                    <span className="text-[8px] font-semibold text-gray-400 leading-none uppercase tracking-wide">
+                                      Comp
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-gray-700 font-mono leading-tight my-[3px]">
+                                      {stage.comp ?? "-"}
+                                    </span>
+                                    <CircleCheckBig className="w-2 h-2 text-green-500" />
+                                  </div>
+                                </div>
+                                <div className="text-center text-[8px] font-medium text-gray-400 bg-gray-50 border-t border-gray-100 px-1 py-[2px] tracking-wide truncate">
+                                  {stage.name}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider mb-4 text-slate-700">Top Production Gaps (WTD)</div>
-              <div className="space-y-3">
-                {topGaps.map(g => (
-                  <div key={g.code} className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-semibold text-slate-600 w-14 shrink-0">{g.code}</span>
-                    <div className="flex-1 h-4 rounded bg-red-50 overflow-hidden">
-                      <div 
-                        className="h-4 rounded bg-red-500 transition-all duration-300"
-                        style={{ width: `${g.pct}%` }}
+          {/* Bottom charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+              <h3 className="text-[11px] font-bold text-gray-700 uppercase tracking-wide mb-3">
+                Variance by Stage (Avg Days)
+              </h3>
+              <ResponsiveContainer width="100%" height={150}>
+                <BarChart data={varianceData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="stage" tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                    {varianceData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+              <h3 className="text-[11px] font-bold text-gray-700 uppercase tracking-wide mb-3">
+                Top Delayed OSPs (by Avg Variance)
+              </h3>
+              <div className="space-y-2.5">
+                {delayedOSPs.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-600 w-36 shrink-0 truncate">
+                      {item.name}
+                    </span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-2 rounded-full bg-red-500"
+                        style={{ width: `${Math.min(item.value * 20, 100)}%` }}
                       />
                     </div>
-                    <span className="text-xs font-bold text-red-600 w-20 text-right shrink-0">
-                      {g.gap} Units
+                    <span className="text-[10px] font-semibold text-red-600 font-mono w-14 text-right">
+                      +{item.value} Days
                     </span>
                   </div>
                 ))}
               </div>
             </div>
-            
-            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400 font-mono">
-              <span>Updated &bull; 10m ago</span>
-              <button className="flex items-center gap-0.5 text-blue-600 hover:underline font-bold">
-                View All Gaps <ArrowRight className="w-3 h-3" />
-              </button>
+
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+              <h3 className="text-[11px] font-bold text-gray-700 uppercase tracking-wide mb-2">
+                Jobs by Overall Status
+              </h3>
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <ResponsiveContainer width={120} height={120}>
+                    <PieChart>
+                      <Pie
+                        data={statusData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={38}
+                        outerRadius={56}
+                        stroke="#fff"
+                      >
+                        {statusData.map((entry, idx) => (
+                          <Cell key={idx} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-xl font-bold text-gray-900 font-mono leading-none">
+                      {totalJobs}
+                    </span>
+                    <span className="text-[9px] text-gray-400 mt-0.5">Total Jobs</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {statusData.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: item.color }}
+                      />
+                      <div>
+                        <p className="text-[10px] text-gray-600">{item.name}</p>
+                        <p className="text-[11px] font-semibold font-mono text-gray-800">
+                          {item.value}{" "}
+                          <span className="text-gray-400 font-normal">
+                            ({Math.round((item.value / totalJobs) * 100)}%)
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );
-};
+}
 
-export default PlanningControlTowerPage;
+/* -------------------- small reusable components -------------------- */
+
+function FilterChip({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col bg-white/10 border border-white/20 hover:border-blue-400 rounded px-2.5 py-1 cursor-pointer transition-colors min-w-[90px]">
+      <span className="text-[9px] text-white/50 leading-none">{label}</span>
+      <div className="flex items-center justify-between gap-2 mt-0.5">
+        <span className="text-[11px] font-medium text-white/90">{value}</span>
+        {icon}
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  sub,
+  icon,
+  iconBg,
+  subClass = "text-gray-400",
+}: {
+  label: string;
+  value: string | number;
+  sub: string;
+  icon: React.ReactNode;
+  iconBg: string;
+  subClass?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 bg-white rounded-lg border border-gray-100 px-3 py-2.5 shadow-sm flex-1 min-w-[180px]">
+      <div className="mt-0.5 shrink-0">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${iconBg}`}>
+          {icon}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] text-gray-500 leading-none mb-1 whitespace-nowrap">
+          {label}
+        </p>
+        <p className="text-xl font-bold text-gray-900 leading-none font-mono">{value}</p>
+        <p className={`text-[11px] font-semibold mt-0.5 ${subClass}`}>{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
